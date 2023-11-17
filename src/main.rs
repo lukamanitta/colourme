@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 extern crate dirs;
 
-fn help() {
+fn usage() {
     println!(
         "usage:
             colourme <string>"
@@ -18,12 +18,17 @@ fn main() {
     match argv.len() {
         2 => {
             colourscheme_name = &argv[1];
-        },
+        }
         _ => {
-            help();
+            usage();
             return;
         }
     };
+
+    let mut colourme_dir = dirs::home_dir().unwrap();
+    colourme_dir.push(".config/colourme");
+
+    // Get config file and construct Config struct
 
     let mut colourscheme_path: PathBuf = dirs::home_dir().unwrap();
     colourscheme_path.push(format!(".config/colourme/schemes/{colourscheme_name}.toml"));
@@ -33,7 +38,7 @@ fn main() {
         Err(why) => {
             println!("ERROR: Couldn't open {colourscheme_path_display}: {why}");
             return;
-        },
+        }
         Ok(colourscheme_file) => colourscheme_file,
     };
 
@@ -42,7 +47,7 @@ fn main() {
         Err(why) => {
             println!("Couldn't read {colourscheme_path_display}: {why}");
             return;
-        },
+        }
         Ok(_) => print!("{colourscheme_path_display} contains: \n{colourscheme_content}"),
     };
 
