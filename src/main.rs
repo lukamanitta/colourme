@@ -1,3 +1,6 @@
+mod config;
+mod colourscheme;
+
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
@@ -25,10 +28,10 @@ fn main() {
         }
     };
 
-    let mut colourme_dir = dirs::home_dir().unwrap();
+    let mut colourme_dir: PathBuf = dirs::home_dir().unwrap();
     colourme_dir.push(".config/colourme");
 
-    // Get config file and construct Config struct
+    // TODO: get config file and construct Config struct
 
     let mut colourscheme_path: PathBuf = dirs::home_dir().unwrap();
     colourscheme_path.push(format!(".config/colourme/schemes/{colourscheme_name}.toml"));
