@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 dirs = "5.0.1"
+colour_utils = { git = "https://github.com/lukamanitta/colour_utils.git" }

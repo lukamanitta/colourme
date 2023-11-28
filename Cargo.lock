@@ -15,9 +15,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "colour_utils"
+version = "0.1.0"
+source = "git+https://github.com/lukamanitta/colour_utils.git#88296c76def64c3648ca59e2937c2ceed37bb096"
+
+[[package]]
 name = "colourme"
 version = "0.1.0"
 dependencies = [
+ "colour_utils",
  "dirs",
 ]
 
