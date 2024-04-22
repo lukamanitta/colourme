@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dirs = "5.0.1"
 colour_utils = { git = "https://github.com/lukamanitta/colour_utils.git" }
 toml = "0.8.8"
+shellexpand = "3.1.0"
+serde = { version = "1.0.198", features = ["derive"] }
+regex = "1.10.4"
