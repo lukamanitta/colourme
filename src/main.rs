@@ -14,7 +14,9 @@ use config::Config;
 
 extern crate shellexpand;
 
-const COLOUR_EXPR_REGEX_STR: &str = r"\{\{\w+:(?:\w|.)+\}\}";
+const TEMPLATE_EXPR_REGEX_STR: &str = r"\{\{(.*)\}\}";
+const COLOUR_FORMAT_REGEX_STR: &str = r"\{\{(\w+):(.*)\}\}";
+const FUNCTION_REGEX_STR: &str = r"(\w+)\((.*)\)";
 const DOT_NOTATION_REGEX_STR: &str = r"\w+";
 
 struct ColourDefinition {
@@ -27,6 +29,29 @@ fn usage() {
         "usage:
             colourme <string>"
     );
+}
+
+fn resolve_dot_notated_array_access(dot_notated_access: &str, table: &Table) -> Option<Value> {
+    let mut intermediate_table = table.clone();
+    let mut resolved_result: Option<Value> = None;
+    let accesses = dot_notated_access.split(".");
+
+    for access in accesses {
+        match intermediate_table.get(access) {
+            Some(entry) => {
+                match entry {
+                    Value::Table(val) => {
+                        intermediate_table = val.clone();
+                    },
+                    val => { resolved_result = Some(val.clone()) }
+                }
+            },
+            None => {
+
+            },
+        }
+    }
+    return resolved_result;
 }
 
 fn main() {
@@ -65,9 +90,13 @@ fn main() {
     };
     let config: Config = Config::new(&config_content);
 
+    // This will be persistent across the various template files to avoid
+    // re-calculating colours, as well as easily replacing them at the end
     let mut colour_definitions: Vec<ColourDefinition> = Vec::new();
 
-    let colour_expr_regex = Regex::new(COLOUR_EXPR_REGEX_STR).unwrap();
+    let template_expr_regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
+    let colour_format_regex = Regex::new(COLOUR_FORMAT_REGEX_STR).unwrap();
+    let function_regex = Regex::new(FUNCTION_REGEX_STR).unwrap();
     let dot_notation_regex = Regex::new(DOT_NOTATION_REGEX_STR).unwrap();
 
     for entry in config.entries.iter() {
@@ -79,60 +108,80 @@ fn main() {
                 exit(1);
             }
         };
-        let colour_expr_matches = colour_expr_regex.find_iter(&template_content);
 
-        // Add new colour definitions
-        for colour_expr in colour_expr_matches {
-
-            // check if already exists in colour definitions
-
-            let mut internal_matches = dot_notation_regex.find_iter(&colour_expr.as_str());
-            let format = match internal_matches.next() {
-                Some(format) => format.as_str(),
-                None => { continue }, // something wrong with placeholder
-            };
-
-            let mut computed_colour_entry = colourscheme_table.clone();
-            let mut colour_result: Option<Result<Colour, InvalidColourFormat>> = None;
-            for dot_access in internal_matches {
-                let colour_entry = match computed_colour_entry.get(dot_access.as_str()) {
-                    Some(entry) => entry,
-                    None => { break }, // tried to access non-existent entry
-                };
-                match colour_entry {
-                    Value::String(val) => {
-                        colour_result = Some(Colour::new(val));
-                    }
-                    Value::Table(val) => {
-                        computed_colour_entry = val.clone();
-                    }
-                    _ => { break }
-                }
-            }
-            // format colour and add to colour definitions
-            let colour = match colour_result {
-                Some(colour_result) => {
-                    colour_result.unwrap()
-                }
-                None => {
+        let template_expr_matches = template_expr_regex.find_iter(&template_content);
+        for template_expr in template_expr_matches {
+            // Bail if this expression has been encountered
+            if colour_definitions.iter()
+                .any(|def| def.label == template_expr.as_str()) {
                     continue;
-                }
+            }
+
+            let format_content_caps =
+                colour_format_regex.captures(
+                    template_expr.as_str()
+                ).unwrap();
+
+            let format = format_content_caps.get(1).map_or("", |c| c.as_str()); // TODO: throw error
+            match format {
+                "hex" | "rgb" | "hsv" => {},
+                _ => { continue; }, // invalid colour format, exit
             };
 
-            let colour_str = match format {
-                "hex" => colour.hex().to_string(),
-                "rgb" => colour.rgb().to_string(),
-                "hsv" => colour.hsv().to_string(),
-                _ => { continue; },
+            let content = format_content_caps.get(2).map_or("", |c| c.as_str()); // TODO: throw
+                                                                                 // error
+
+            // check if function regex matches
+            // this is placeholder
+            // let colour_function_identifier = regex capture
+            let colour_function = |colour: Colour| -> Colour {
+                colour
+            };
+            let colour_identifier = content.clone();
+
+            // get result from dot notated access
+            let resolved_colour_value: Option<Value> =
+                resolve_dot_notated_array_access(colour_identifier, &colourscheme_table);
+            match resolved_colour_value {
+                Some(_) => {},
+                None => { continue; }, // invalid colour identifier, exit
+            };
+
+            // check if it is a String
+            let resolved_colour_str = match resolved_colour_value.unwrap() {
+                Value::String(val) => {
+                    Some(val)
+                }
+                _ => { None }
+            };
+            match resolved_colour_str {
+                Some(_) => {},
+                None => { continue; }, // toml value was something other than string, exit
+            };
+
+            let resolved_colour_object = Colour::new(&resolved_colour_str.unwrap());
+            match resolved_colour_object {
+                Ok(_) => {},
+                Err(_) => { continue; }, // colour couldn't be created, exit
+            };
+
+            let mutated_colour = colour_function(resolved_colour_object.unwrap());
+
+            let formatted_colour_str = match format {
+                "hex" => mutated_colour.hex().to_string(),
+                "rgb" => mutated_colour.rgb().to_string(),
+                "hsv" => mutated_colour.hsv().to_string(),
+                _ => { continue; }, // for some reason format conversion didn't happen, exit
             };
 
             colour_definitions.push(
                 ColourDefinition {
-                    label: colour_expr.as_str().to_string(),
-                    colour_str,
+                    label: template_expr.as_str().to_string(),
+                    colour_str: formatted_colour_str,
                 }
             );
         }
+
         // Colour definitions are collected, now replace them in the temporary file contents
         for colour_definition in colour_definitions.iter() {
             template_content = template_content.replace(&colour_definition.label, &colour_definition.colour_str);
