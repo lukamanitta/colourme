@@ -63,7 +63,7 @@ fn main() {
         }
         _ => {
             usage();
-            return;
+            exit(1);
         }
     };
 
@@ -100,7 +100,6 @@ fn main() {
     let dot_notation_regex = Regex::new(DOT_NOTATION_REGEX_STR).unwrap();
 
     for entry in config.entries.iter() {
-        println!("Processing {} template...", entry.name);
         let mut template_content = match fs::read_to_string(&entry.template_path) {
             Ok(c) => c,
             Err(why) => {
