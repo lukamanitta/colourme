@@ -5,7 +5,6 @@ use std::fs;
 use std::io::Write;
 use std::process::exit;
 
-use colour_utils::errors::InvalidColourFormat;
 use toml::{Table, Value};
 use regex::Regex;
 
@@ -149,22 +148,15 @@ fn main() {
             // check if it is a String
             let resolved_colour_str = match resolved_colour_value.unwrap() {
                 Value::String(val) => {
-                    Some(val)
+                    Ok(val)
                 }
-                _ => { None }
-            };
-            match resolved_colour_str {
-                Some(_) => {},
-                None => { continue; }, // toml value was something other than string, exit
+                _ => { Err("Template entry is not a string") }
             };
 
-            let resolved_colour_object = Colour::new(&resolved_colour_str.unwrap());
-            match resolved_colour_object {
-                Ok(_) => {},
-                Err(_) => { continue; }, // colour couldn't be created, exit
-            };
+            let resolved_colour_object = Colour::new(&resolved_colour_str.unwrap())
+                .unwrap_or_else(|e| exit(1));
 
-            let mutated_colour = colour_function(resolved_colour_object.unwrap());
+            let mutated_colour = colour_function(resolved_colour_object);
 
             let formatted_colour_str = match format {
                 "hex" => mutated_colour.hex().to_string(),

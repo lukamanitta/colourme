@@ -20,6 +20,7 @@ impl Config {
         let mut config = Config { entries: Vec::new() };
         let config_table = toml_string.parse::<Table>().unwrap();
         for (key, value) in config_table.iter() {
+            // check value for "template" and "destination"
             config.entries.push(
                 ConfigEntry {
                     name: key.to_string(),
