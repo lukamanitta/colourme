@@ -1,4 +1,4 @@
-use colour_utils::{Colour, darken};
+use colour_utils::{darken, Colour};
 use std::collections::HashMap;
 
 // map function names to function pointers with variable arguments
@@ -18,15 +18,11 @@ impl Parser {
         Parser {
             source,
             result: Err("No result".to_string()),
-            defined_functions: HashMap::from([
-                ("darken".to_string(), darken),
-            ]),
+            defined_functions: HashMap::from([("darken".to_string(), darken)]),
         }
     }
 
-    pub fn parse(&mut self) {
-
-    }
+    pub fn parse(&mut self) {}
 
     pub fn result(&self) -> Result<Colour, String> {
         self.result

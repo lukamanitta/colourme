@@ -5,8 +5,8 @@ use std::fs;
 use std::io::Write;
 use std::process::exit;
 
-use toml::{Table, Value};
 use regex::Regex;
+use toml::{Table, Value};
 
 use colour_utils::Colour;
 use config::Config;
@@ -37,17 +37,13 @@ fn resolve_dot_notated_array_access(dot_notated_access: &str, table: &Table) -> 
 
     for access in accesses {
         match intermediate_table.get(access) {
-            Some(entry) => {
-                match entry {
-                    Value::Table(val) => {
-                        intermediate_table = val.clone();
-                    },
-                    val => { resolved_result = Some(val.clone()) }
+            Some(entry) => match entry {
+                Value::Table(val) => {
+                    intermediate_table = val.clone();
                 }
+                val => resolved_result = Some(val.clone()),
             },
-            None => {
-
-            },
+            None => {}
         }
     }
     return resolved_result;
@@ -110,20 +106,23 @@ fn main() {
         let template_expr_matches = template_expr_regex.find_iter(&template_content);
         for template_expr in template_expr_matches {
             // Bail if this expression has been encountered
-            if colour_definitions.iter()
-                .any(|def| def.label == template_expr.as_str()) {
-                    continue;
+            if colour_definitions
+                .iter()
+                .any(|def| def.label == template_expr.as_str())
+            {
+                continue;
             }
 
-            let format_content_caps =
-                colour_format_regex.captures(
-                    template_expr.as_str()
-                ).unwrap();
+            let format_content_caps = colour_format_regex
+                .captures(template_expr.as_str())
+                .unwrap();
 
             let format = format_content_caps.get(1).map_or("", |c| c.as_str()); // TODO: throw error
             match format {
-                "hex" | "rgb" | "hsv" => {},
-                _ => { continue; }, // invalid colour format, exit
+                "hex" | "rgb" | "hsv" => {}
+                _ => {
+                    continue;
+                } // invalid colour format, exit
             };
 
             let content = format_content_caps.get(2).map_or("", |c| c.as_str()); // TODO: throw
@@ -132,29 +131,27 @@ fn main() {
             // check if function regex matches
             // this is placeholder
             // let colour_function_identifier = regex capture
-            let colour_function = |colour: Colour| -> Colour {
-                colour
-            };
+            let colour_function = |colour: Colour| -> Colour { colour };
             let colour_identifier = content.clone();
 
             // get result from dot notated access
             let resolved_colour_value: Option<Value> =
                 resolve_dot_notated_array_access(colour_identifier, &colourscheme_table);
             match resolved_colour_value {
-                Some(_) => {},
-                None => { continue; }, // invalid colour identifier, exit
+                Some(_) => {}
+                None => {
+                    continue;
+                } // invalid colour identifier, exit
             };
 
             // check if it is a String
             let resolved_colour_str = match resolved_colour_value.unwrap() {
-                Value::String(val) => {
-                    Ok(val)
-                }
-                _ => { Err("Template entry is not a string") }
+                Value::String(val) => Ok(val),
+                _ => Err("Template entry is not a string"),
             };
 
-            let resolved_colour_object = Colour::new(&resolved_colour_str.unwrap())
-                .unwrap_or_else(|e| exit(1));
+            let resolved_colour_object =
+                Colour::new(&resolved_colour_str.unwrap()).unwrap_or_else(|e| exit(1));
 
             let mutated_colour = colour_function(resolved_colour_object);
 
@@ -162,20 +159,21 @@ fn main() {
                 "hex" => mutated_colour.hex().to_string(),
                 "rgb" => mutated_colour.rgb().to_string(),
                 "hsv" => mutated_colour.hsv().to_string(),
-                _ => { continue; }, // for some reason format conversion didn't happen, exit
+                _ => {
+                    continue;
+                } // for some reason format conversion didn't happen, exit
             };
 
-            colour_definitions.push(
-                ColourDefinition {
-                    label: template_expr.as_str().to_string(),
-                    colour_str: formatted_colour_str,
-                }
-            );
+            colour_definitions.push(ColourDefinition {
+                label: template_expr.as_str().to_string(),
+                colour_str: formatted_colour_str,
+            });
         }
 
         // Colour definitions are collected, now replace them in the temporary file contents
         for colour_definition in colour_definitions.iter() {
-            template_content = template_content.replace(&colour_definition.label, &colour_definition.colour_str);
+            template_content =
+                template_content.replace(&colour_definition.label, &colour_definition.colour_str);
         }
         // Then replace escaped curly brackets with regular curly brackets
         template_content = template_content.replace(r"\{", r"{");
@@ -186,7 +184,9 @@ fn main() {
             .create(true)
             .open(&entry.destination_path)
             .unwrap();
-        destination_file.write(&template_content.as_bytes()).unwrap();
+        destination_file
+            .write(&template_content.as_bytes())
+            .unwrap();
         destination_file.flush().unwrap();
     }
 }
