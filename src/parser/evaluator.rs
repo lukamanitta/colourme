@@ -1,5 +1,5 @@
 use crate::parser::ast::{Expr, TemplateExpr};
-use crate::parser::functions::builtin_darken;
+use crate::parser::functions::{builtin_blend, builtin_darken, builtin_multiply_brightness};
 use colour_utils::Colour;
 use std::collections::HashMap;
 use toml::{Table, Value as TomlValue};
@@ -21,6 +21,9 @@ impl<'a> Evaluator<'a> {
     pub fn new(toml_table: &'a Table) -> Self {
         let mut functions: HashMap<&'static str, FunctionPtr> = HashMap::new();
         functions.insert("darken", builtin_darken);
+        functions.insert("blend", builtin_blend);
+        functions.insert("multiply_brightness", builtin_multiply_brightness);
+
         Self {
             toml_table,
             functions,

@@ -1,5 +1,3 @@
-use super::token::Token;
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct TemplateExpr<'a> {
     pub format: &'a str,
