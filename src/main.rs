@@ -1,4 +1,8 @@
 mod config;
+mod engine;
+mod parser;
+
+use parser::{Lexer, Token};
 
 use std::env;
 use std::fs;
