@@ -1,4 +1,9 @@
 #[derive(Debug, PartialEq, Clone)]
+pub struct TemplateBlock<'a> {
+    pub fallbacks: Vec<TemplateExpr<'a>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct TemplateExpr<'a> {
     pub format: &'a str,
     pub expr: Expr<'a>,

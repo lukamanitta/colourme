@@ -48,6 +48,19 @@ impl<'a> Lexer<'a> {
                     self.chars.next();
                 }
 
+                '|' => {
+                    self.chars.next();
+                    if let Some(&(_, '|')) = self.chars.peek() {
+                        tokens.push(Token::Or);
+                        self.chars.next();
+                    } else {
+                        return Err(format!(
+                            "Expected '||', found single '|' at position {}",
+                            start
+                        ));
+                    }
+                }
+
                 // Hex colours
                 '#' => match self.get_hex_token() {
                     Ok(token) => tokens.push(token),
@@ -222,5 +235,24 @@ mod tests {
         let mut lexer = Lexer::new(input);
         let result = lexer.tokenize();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_lexer_or_operator() {
+        let input = "hex:color1 || hex:color2";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize().unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Word("hex"),
+                Token::Colon,
+                Token::Word("color1"),
+                Token::Or,
+                Token::Word("hex"),
+                Token::Colon,
+                Token::Word("color2"),
+            ]
+        );
     }
 }

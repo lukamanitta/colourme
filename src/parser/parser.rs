@@ -1,31 +1,4 @@
-// Production rules:
-// String ::= Letter | String Letter
-// Toml ::= String | String "." Toml
-// ColourFormat ::= "hex" | "rgb" | "rgba" | "hsv"
-//
-// HexColour ::= "#" HexSequence
-// RGBColour ::= "rgb(" Num "," Num "," Num ")"
-// RGBAColour ::= "rgba(" Num "," Num "," Num "," Num ")"
-// HSVColour ::= "hsv(" Num "," Num "," Num ")"
-//
-// ColourIdentifier ::= Toml
-// Colour ::= ColourIdentifier | HexColour | RGBColour | RGBAColour | HSVColour
-//
-// FunctionIdentifier ::= "darken" | "lighten" | "saturate" | "desaturate"
-// FunctionArgs ::= Colour | Function | Colour "," FunctionArgs | Function "," FunctionArgs
-// Function ::= FunctionIdentifier "(" FunctionArgs ")"
-//
-// HexSequence ::= HexDigit HexDigit HexDigit HexDigit HexDigit HexDigit
-// HexDigit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "A" | "B" | "C" | "D" | "E" | "F" | "a" | "b" | "c" | "d" | "e" | "f"
-// Num ::= Integer | Integer "." Integer
-// Integer ::= Digit | Integer Digit
-// Digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
-// Letter ::= "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" |
-// "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "A" | "B" | "C" | "D" |
-// "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" |
-// "U" | "V" | "W" | "X" | "Y" | "Z" | "_" | "-" | Digit
-
-use super::ast::{Expr, TemplateExpr};
+use super::ast::{Expr, TemplateBlock, TemplateExpr};
 use super::token::Token;
 
 pub struct Parser<'a> {
@@ -38,7 +11,26 @@ impl<'a> Parser<'a> {
         Self { tokens, current: 0 }
     }
 
-    pub fn parse(&mut self) -> Result<TemplateExpr<'a>, String> {
+    pub fn parse(&mut self) -> Result<TemplateBlock<'a>, String> {
+        let mut fallbacks = Vec::new();
+
+        fallbacks.push(self.parse_template_expr()?);
+
+        while self.match_token(&Token::Or) {
+            fallbacks.push(self.parse_template_expr()?);
+        }
+
+        if !self.is_at_end() {
+            return Err(format!(
+                "Unexpected token after parsing template expression: {:?}",
+                self.peek()
+            ));
+        }
+
+        Ok(TemplateBlock { fallbacks })
+    }
+
+    pub fn parse_template_expr(&mut self) -> Result<TemplateExpr<'a>, String> {
         // Consume the format
         let format = match self.advance() {
             Some(&Token::Word(w)) => w,
@@ -52,14 +44,6 @@ impl<'a> Parser<'a> {
 
         // Parse the expression
         let expr = self.parse_expression()?;
-
-        // Ensure no trailing tokens
-        if !self.is_at_end() {
-            return Err(format!(
-                "Unexpected token after expression: {:?}",
-                self.peek()
-            ));
-        }
 
         Ok(TemplateExpr { format, expr })
     }
@@ -158,7 +142,7 @@ mod tests {
     use super::*;
     use crate::parser::lexer::Lexer;
 
-    fn parse_str(input: &str) -> TemplateExpr {
+    fn parse_str(input: &str) -> TemplateBlock {
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
@@ -170,9 +154,11 @@ mod tests {
         let ast = parse_str("hex:colors.primary");
         assert_eq!(
             ast,
-            TemplateExpr {
-                format: "hex",
-                expr: Expr::Identifier(vec!["colors", "primary"])
+            TemplateBlock {
+                fallbacks: vec![TemplateExpr {
+                    format: "hex",
+                    expr: Expr::Identifier(vec!["colors", "primary"])
+                }]
             }
         );
     }
@@ -182,12 +168,14 @@ mod tests {
         let ast = parse_str("rgb:darken(colors.bg, 0.5)");
         assert_eq!(
             ast,
-            TemplateExpr {
-                format: "rgb",
-                expr: Expr::Function {
-                    name: "darken",
-                    args: vec![Expr::Identifier(vec!["colors", "bg"]), Expr::Number("0.5"),]
-                }
+            TemplateBlock {
+                fallbacks: vec![TemplateExpr {
+                    format: "rgb",
+                    expr: Expr::Function {
+                        name: "darken",
+                        args: vec![Expr::Identifier(vec!["colors", "bg"]), Expr::Number("0.5"),]
+                    }
+                }]
             }
         );
     }
@@ -197,18 +185,23 @@ mod tests {
         let ast = parse_str("hsv:lighten(darken(colors.bg, 0.5), 0.2)");
         assert_eq!(
             ast,
-            TemplateExpr {
-                format: "hsv",
-                expr: Expr::Function {
-                    name: "lighten",
-                    args: vec![
-                        Expr::Function {
-                            name: "darken",
-                            args: vec![Expr::Identifier(vec!["colors", "bg"]), Expr::Number("0.5"),]
-                        },
-                        Expr::Number("0.2"),
-                    ]
-                }
+            TemplateBlock {
+                fallbacks: vec![TemplateExpr {
+                    format: "hsv",
+                    expr: Expr::Function {
+                        name: "lighten",
+                        args: vec![
+                            Expr::Function {
+                                name: "darken",
+                                args: vec![
+                                    Expr::Identifier(vec!["colors", "bg"]),
+                                    Expr::Number("0.5"),
+                                ]
+                            },
+                            Expr::Number("0.2"),
+                        ]
+                    }
+                }]
             }
         );
     }
@@ -221,5 +214,29 @@ mod tests {
         let result = parser.parse();
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_with_or_fallbacks() {
+        let ast = parse_str("hex:colors.primary || hex:colors.secondary || hex:#ff0000");
+        assert_eq!(
+            ast,
+            TemplateBlock {
+                fallbacks: vec![
+                    TemplateExpr {
+                        format: "hex",
+                        expr: Expr::Identifier(vec!["colors", "primary"])
+                    },
+                    TemplateExpr {
+                        format: "hex",
+                        expr: Expr::Identifier(vec!["colors", "secondary"])
+                    },
+                    TemplateExpr {
+                        format: "hex",
+                        expr: Expr::Hex("#ff0000")
+                    },
+                ]
+            }
+        );
     }
 }

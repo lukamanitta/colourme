@@ -8,4 +8,5 @@ pub enum Token<'a> {
     Comma,
     OpenParen,
     CloseParen,
+    Or,
 }
