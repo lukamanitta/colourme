@@ -1,4 +1,8 @@
 mod config;
+mod engine;
+mod parser;
+
+use engine::TemplateEngine;
 
 use std::env;
 use std::fs;
@@ -6,17 +10,13 @@ use std::io::Write;
 use std::process::exit;
 
 use regex::Regex;
-use toml::{Table, Value};
+use toml::Table;
 
-use colour_utils::Colour;
 use config::Config;
 
 extern crate shellexpand;
 
 const TEMPLATE_EXPR_REGEX_STR: &str = r"\{\{(.*)\}\}";
-const COLOUR_FORMAT_REGEX_STR: &str = r"\{\{(\w+):(.*)\}\}";
-const FUNCTION_REGEX_STR: &str = r"(\w+)\((.*)\)";
-const DOT_NOTATION_REGEX_STR: &str = r"\w+";
 
 struct ColourDefinition {
     label: String,
@@ -28,25 +28,6 @@ fn usage() {
         "usage:
             colourme <string>"
     );
-}
-
-fn resolve_dot_notated_array_access(dot_notated_access: &str, table: &Table) -> Option<Value> {
-    let mut intermediate_table = table.clone();
-    let mut resolved_result: Option<Value> = None;
-    let accesses = dot_notated_access.split(".");
-
-    for access in accesses {
-        match intermediate_table.get(access) {
-            Some(entry) => match entry {
-                Value::Table(val) => {
-                    intermediate_table = val.clone();
-                }
-                val => resolved_result = Some(val.clone()),
-            },
-            None => {}
-        }
-    }
-    return resolved_result;
 }
 
 fn main() {
@@ -89,10 +70,9 @@ fn main() {
     // re-calculating colours, as well as easily replacing them at the end
     let mut colour_definitions: Vec<ColourDefinition> = Vec::new();
 
+    let engine = TemplateEngine::new(&colourscheme_table);
+
     let template_expr_regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
-    let colour_format_regex = Regex::new(COLOUR_FORMAT_REGEX_STR).unwrap();
-    let function_regex = Regex::new(FUNCTION_REGEX_STR).unwrap();
-    let dot_notation_regex = Regex::new(DOT_NOTATION_REGEX_STR).unwrap();
 
     for entry in config.entries.iter() {
         let mut template_content = match fs::read_to_string(&entry.template_path) {
@@ -113,60 +93,26 @@ fn main() {
                 continue;
             }
 
-            let format_content_caps = colour_format_regex
-                .captures(template_expr.as_str())
-                .unwrap();
+            let stripped_expr = template_expr
+                .as_str()
+                .trim_matches(|c| c == '{' || c == '}')
+                .trim();
 
-            let format = format_content_caps.get(1).map_or("", |c| c.as_str()); // TODO: throw error
-            match format {
-                "hex" | "rgb" | "hsv" => {}
-                _ => {
-                    continue;
-                } // invalid colour format, exit
-            };
-
-            let content = format_content_caps.get(2).map_or("", |c| c.as_str()); // TODO: throw
-                                                                                 // error
-
-            // check if function regex matches
-            // this is placeholder
-            // let colour_function_identifier = regex capture
-            let colour_function = |colour: Colour| -> Colour { colour };
-            let colour_identifier = content.clone();
-
-            // get result from dot notated access
-            let resolved_colour_value: Option<Value> =
-                resolve_dot_notated_array_access(colour_identifier, &colourscheme_table);
-            match resolved_colour_value {
-                Some(_) => {}
-                None => {
-                    continue;
-                } // invalid colour identifier, exit
-            };
-
-            // check if it is a String
-            let resolved_colour_str = match resolved_colour_value.unwrap() {
-                Value::String(val) => Ok(val),
-                _ => Err("Template entry is not a string"),
-            };
-
-            let resolved_colour_object =
-                Colour::new(&resolved_colour_str.unwrap()).unwrap_or_else(|e| exit(1));
-
-            let mutated_colour = colour_function(resolved_colour_object);
-
-            let formatted_colour_str = match format {
-                "hex" => mutated_colour.hex().to_string(),
-                "rgb" => mutated_colour.rgb().to_string(),
-                "hsv" => mutated_colour.hsv().to_string(),
-                _ => {
-                    continue;
-                } // for some reason format conversion didn't happen, exit
+            let resolved_colour_str = match engine.resolve_block(stripped_expr) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!(
+                        "Error resolving expression '{}': {}",
+                        template_expr.as_str(),
+                        e
+                    );
+                    exit(1);
+                }
             };
 
             colour_definitions.push(ColourDefinition {
                 label: template_expr.as_str().to_string(),
-                colour_str: formatted_colour_str,
+                colour_str: resolved_colour_str,
             });
         }
 
@@ -177,6 +123,12 @@ fn main() {
         }
         // Then replace escaped curly brackets with regular curly brackets
         template_content = template_content.replace(r"\{", r"{");
+
+        println!(
+            "[{}] Writing to {}...",
+            &entry.name, &entry.destination_path
+        );
+        // println!("Resolved template content:\n{}", &template_content);
 
         let mut destination_file = std::fs::OpenOptions::new()
             .write(true)
