@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-colour_utils = { git = "https://github.com/lukamanitta/colour_utils.git" }
+# colour_utils = { git = "https://github.com/lukamanitta/colour_utils.git" }
+colour_utils = { path = "../colour_utils" }
 toml = "0.8.8"
 shellexpand = "3.1.0"
 serde = { version = "1.0.198", features = ["derive"] }

@@ -8,6 +8,7 @@ use toml::{Table, Value as TomlValue};
 pub enum Value {
     Colour(Colour),
     Number(f32),
+    String(String),
 }
 
 pub type FunctionPtr = fn(&[Value]) -> Result<Value, String>;
@@ -33,20 +34,62 @@ impl<'a> Evaluator<'a> {
     pub fn evaluate(&self, template: &TemplateExpr) -> Result<String, String> {
         let result = self.evaluate_expr(&template.expr)?;
 
-        let final_colour = match result {
-            Value::Colour(c) => c,
-            Value::Number(_) => return Err("Expected a colour value, got a number".to_string()),
-        };
-
         match template.format {
-            "hex" => Ok(final_colour.hex().to_string()),
-            "rgb" => Ok(final_colour.rgb().to_string()),
-            "hsv" => Ok(final_colour.hsv().to_string()),
+            "hex" => match result {
+                Value::String(s) => {
+                    let colour = Colour::new(&s);
+                    match colour {
+                        Ok(c) => Ok(c.hex().to_string()),
+                        Err(e) => Err(format!("Failed to parse '{}' as a colour: {}", s, e)),
+                    }
+                }
+                Value::Colour(c) => Ok(c.hex().to_string()),
+                Value::Number(_) => Err("Expected a hex value, got a number".to_string()),
+            },
+            "rgb" => match result {
+                Value::String(s) => {
+                    let colour = Colour::new(&s);
+                    match colour {
+                        Ok(c) => Ok(c.rgb().to_string()),
+                        Err(e) => Err(format!("Failed to parse '{}' as a colour: {}", s, e)),
+                    }
+                }
+                Value::Colour(c) => Ok(c.rgb().to_string()),
+                Value::Number(_) => Err("Expected an rgb value, got a number".to_string()),
+            },
+            "hsv" => match result {
+                Value::String(s) => {
+                    let colour = Colour::new(&s);
+                    match colour {
+                        Ok(c) => Ok(c.hsv().to_string()),
+                        Err(e) => Err(format!("Failed to parse '{}' as a colour: {}", s, e)),
+                    }
+                }
+                Value::Colour(c) => Ok(c.hsv().to_string()),
+                Value::Number(_) => Err("Expected an hsv value, got a number".to_string()),
+            },
+            "str" => match result {
+                Value::String(s) => Ok(s),
+                // Should only ever be hex if we get a Value::Colour at this point
+                Value::Colour(c) => Ok(c.hex().to_string()),
+                Value::Number(n) => Ok(n.to_string()),
+            },
+            "num" => match result {
+                Value::Number(n) => Ok(n.to_string()),
+                Value::String(s) => s
+                    .parse::<f32>()
+                    .map_err(|_| format!("Failed to parse '{}' as a number", s))
+                    .map(|n| n.to_string()),
+                Value::Colour(c) => Err(format!(
+                    "Cannot convert colour '{}' to a number",
+                    c.hex().to_string()
+                )),
+            },
             _ => Err(format!("Unsupported format: {}", template.format)),
         }
     }
 
-    pub fn evaluate_expr(&self, expr: &Expr) -> Result<Value, String> {
+    fn evaluate_expr(&self, expr: &Expr) -> Result<Value, String> {
         match expr {
             Expr::Number(n_str) => {
                 let parsed = n_str
@@ -71,24 +114,18 @@ impl<'a> Evaluator<'a> {
                     };
                 }
 
-                let final_str = match current_value {
-                    Some(TomlValue::String(s)) => s,
+                match current_value {
+                    Some(&TomlValue::String(ref s)) => Ok(Value::String(s.clone())),
+                    Some(&TomlValue::Integer(i)) => Ok(Value::Number(i as f32)),
+                    Some(&TomlValue::Float(f)) => Ok(Value::Number(f as f32)),
                     Some(_) => {
                         return Err(format!(
                             "Expected a string at the end of the path, got {:?}",
                             current_value
                         ))
                     }
-                    None => return Err(format!("Path not found in TOML: {:?}", path_parts)),
-                };
-
-                let colour = Colour::new(final_str).map_err(|e| {
-                    format!(
-                        "Failed to parse colour from TOML string '{}': {}",
-                        final_str, e
-                    )
-                })?;
-                Ok(Value::Colour(colour))
+                    None => Err(format!("Path not found in TOML: {:?}", path_parts)),
+                }
             }
 
             Expr::Function { name, args } => {
@@ -116,6 +153,10 @@ mod tests {
 
     fn mock_toml() -> Table {
         let toml_str = r#"
+            some_string = "Some String"
+            some_int = 42
+            some_float = 3.14
+
             [colors]
             primary = '#FF0000'
             background = '#222222'
@@ -207,6 +248,51 @@ mod tests {
                 .hex()
                 .to_string()
         );
+    }
+
+    #[test]
+    fn test_evaluate_string_format() {
+        let toml_data = mock_toml();
+        let evaluator = Evaluator::new(&toml_data);
+
+        // AST for: `str:some_string`
+        let ast = TemplateExpr {
+            format: "str",
+            expr: Expr::Identifier(vec!["some_string"]),
+        };
+
+        let result = evaluator.evaluate(&ast).unwrap();
+        assert_eq!(result, "Some String");
+    }
+
+    #[test]
+    fn test_evaluate_number_format_int() {
+        let toml_data = mock_toml();
+        let evaluator = Evaluator::new(&toml_data);
+
+        // AST for: `num:some_int`
+        let ast = TemplateExpr {
+            format: "num",
+            expr: Expr::Identifier(vec!["some_int"]),
+        };
+
+        let result = evaluator.evaluate(&ast).unwrap();
+        assert_eq!(result, "42");
+    }
+
+    #[test]
+    fn test_evaluate_number_format_float() {
+        let toml_data = mock_toml();
+        let evaluator = Evaluator::new(&toml_data);
+
+        // AST for: `num:some_float`
+        let ast = TemplateExpr {
+            format: "num",
+            expr: Expr::Identifier(vec!["some_float"]),
+        };
+
+        let result = evaluator.evaluate(&ast).unwrap();
+        assert_eq!(result, "3.14");
     }
 
     // --- Error Handling Tests ---

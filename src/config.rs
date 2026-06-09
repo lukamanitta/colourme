@@ -8,6 +8,7 @@ pub struct ConfigEntry {
     pub name: String,
     pub template_path: String,
     pub destination_path: String,
+    pub post_hook: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -28,6 +29,9 @@ impl Config {
                 template_path: shellexpand::tilde(&value["template"].as_str().unwrap()).to_string(),
                 destination_path: shellexpand::tilde(&value["destination"].as_str().unwrap())
                     .to_string(),
+                post_hook: value
+                    .get("post_hook")
+                    .and_then(|v| v.as_str().map(|s| s.to_string())),
             });
         }
 

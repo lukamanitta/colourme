@@ -1,5 +1,6 @@
 use crate::parser::evaluator::Value;
 use colour_utils::operations::{blend, darken, multiply_brightness};
+use colour_utils::Colour;
 
 pub fn builtin_darken(args: &[Value]) -> Result<Value, String> {
     if args.len() != 2 {
@@ -9,8 +10,16 @@ pub fn builtin_darken(args: &[Value]) -> Result<Value, String> {
         ));
     }
 
+    let mut constructed_colour: Option<Colour> = None;
     let colour = match &args[0] {
-        Value::Colour(c) => c,
+        Value::Colour(ref c) => c,
+        Value::String(s) => {
+            constructed_colour = match Colour::new(s) {
+                Ok(c) => Some(c),
+                Err(_) => return Err("First argument to darken must be a colour".to_string()),
+            };
+            constructed_colour.as_ref().unwrap()
+        }
         _ => return Err("First argument to darken must be a colour".to_string()),
     };
 
@@ -35,13 +44,29 @@ pub fn builtin_blend(args: &[Value]) -> Result<Value, String> {
         ));
     }
 
+    let mut constructed_colour1: Option<Colour> = None;
     let colour1 = match &args[0] {
-        Value::Colour(c) => c,
+        Value::Colour(ref c) => c,
+        Value::String(s) => {
+            constructed_colour1 = match Colour::new(s) {
+                Ok(c) => Some(c),
+                Err(_) => return Err("First argument to blend must be a colour".to_string()),
+            };
+            constructed_colour1.as_ref().unwrap()
+        }
         _ => return Err("First argument to blend must be a colour".to_string()),
     };
 
-    let colour2 = match &args[1] {
-        Value::Colour(c) => c,
+    let mut constructed_colour2: Option<Colour>;
+    let colour2 = match &args[0] {
+        Value::Colour(ref c) => c,
+        Value::String(s) => {
+            constructed_colour2 = match Colour::new(s) {
+                Ok(c) => Some(c),
+                Err(_) => return Err("Second argument to blend must be a colour".to_string()),
+            };
+            constructed_colour2.as_ref().unwrap()
+        }
         _ => return Err("Second argument to blend must be a colour".to_string()),
     };
 
@@ -66,8 +91,18 @@ pub fn builtin_multiply_brightness(args: &[Value]) -> Result<Value, String> {
         ));
     }
 
+    let mut constructed_colour: Option<Colour> = None;
     let colour = match &args[0] {
-        Value::Colour(c) => c,
+        Value::Colour(ref c) => c,
+        Value::String(s) => {
+            constructed_colour = match Colour::new(s) {
+                Ok(c) => Some(c),
+                Err(_) => {
+                    return Err("First argument to multiply_brightness must be a colour".to_string())
+                }
+            };
+            constructed_colour.as_ref().unwrap()
+        }
         _ => return Err("First argument to multiply_brightness must be a colour".to_string()),
     };
 

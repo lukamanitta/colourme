@@ -140,5 +140,29 @@ fn main() {
             .write(&template_content.as_bytes())
             .unwrap();
         destination_file.flush().unwrap();
+
+        if let Some(post_hook) = &entry.post_hook {
+            println!("[{}] Executing post-hook: {}", &entry.name, post_hook);
+            match std::process::Command::new("sh")
+                .arg("-c")
+                .arg(post_hook)
+                .status()
+            {
+                Ok(status) => {
+                    if !status.success() {
+                        eprintln!(
+                            "[{}] Post-hook command exited with non-zero status: {}",
+                            &entry.name, status
+                        );
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[{}] Failed to execute post-hook command '{}': {}",
+                        &entry.name, post_hook, e
+                    );
+                }
+            }
+        }
     }
 }
