@@ -57,6 +57,17 @@ impl<'a> Evaluator<'a> {
                 Value::Colour(c) => Ok(c.rgb().to_string()),
                 Value::Number(_) => Err("Expected an rgb value, got a number".to_string()),
             },
+            "rgba" => match result {
+                Value::String(s) => {
+                    let colour = Colour::new(&s);
+                    match colour {
+                        Ok(c) => Ok(c.rgba().to_string()),
+                        Err(e) => Err(format!("Failed to parse '{}' as a colour: {}", s, e)),
+                    }
+                }
+                Value::Colour(c) => Ok(c.rgba().to_string()),
+                Value::Number(_) => Err("Expected an rgba value, got a number".to_string()),
+            },
             "hsv" => match result {
                 Value::String(s) => {
                     let colour = Colour::new(&s);
@@ -160,6 +171,7 @@ mod tests {
             [colors]
             primary = '#FF0000'
             background = '#222222'
+            overlay = '#00000080'
 
             [theme]
             accent = '#00FF00'
@@ -203,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn test_formatting_conversion() {
+    fn test_formatting_conversion_rgb() {
         let toml_data = mock_toml();
         let evaluator = Evaluator::new(&toml_data);
 
@@ -215,9 +227,24 @@ mod tests {
 
         let result = evaluator.evaluate(&ast).unwrap();
 
-        // Assuming your colour.rgb().to_string() outputs this format.
         // #FF0000 is Pure Red.
         assert_eq!(result, "rgb(255, 0, 0)");
+    }
+
+    #[test]
+    fn test_formatting_conversion_rgba() {
+        let toml_data = mock_toml();
+        let evaluator = Evaluator::new(&toml_data);
+
+        // AST for: `rgb:colors.overlay`
+        let ast = TemplateExpr {
+            format: "rgba",
+            expr: Expr::Identifier(vec!["colors", "overlay"]),
+        };
+
+        let result = evaluator.evaluate(&ast).unwrap();
+
+        assert_eq!(result, "rgba(0, 0, 0, 0.5)");
     }
 
     #[test]
