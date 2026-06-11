@@ -1,10 +1,12 @@
 use crate::parser::ast::{Expr, TemplateExpr};
-use crate::parser::functions::{builtin_blend, builtin_darken, builtin_multiply_brightness};
+use crate::parser::functions::{
+    builtin_blend, builtin_darken, builtin_multiply_brightness, builtin_random_select,
+};
 use colour_utils::Colour;
 use std::collections::HashMap;
 use toml::{Table, Value as TomlValue};
 
-// #[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Colour(Colour),
     Number(f32),
@@ -24,6 +26,7 @@ impl<'a> Evaluator<'a> {
         functions.insert("darken", builtin_darken);
         functions.insert("blend", builtin_blend);
         functions.insert("multiply_brightness", builtin_multiply_brightness);
+        functions.insert("random_select", builtin_random_select);
 
         Self {
             toml_table,
@@ -274,6 +277,35 @@ mod tests {
                 .unwrap()
                 .hex()
                 .to_string()
+        );
+    }
+
+    #[test]
+    fn test_evaluate_random_select_function() {
+        let toml_data = mock_toml();
+        let evaluator = Evaluator::new(&toml_data);
+
+        // AST for: `hex:random_select(colors.primary, colors.background, colors.overlay)`
+        let ast = TemplateExpr {
+            format: "hex",
+            expr: Expr::Function {
+                name: "random_select",
+                args: vec![
+                    Expr::Identifier(vec!["colors", "primary"]),
+                    Expr::Identifier(vec!["colors", "background"]),
+                    Expr::Identifier(vec!["colors", "overlay"]),
+                ],
+            },
+        };
+
+        let result = evaluator.evaluate(&ast).unwrap();
+
+        // The result should be one of the three colours in the TOML.
+        let valid_results = vec!["FF0000", "222222", "000000"];
+        assert!(
+            valid_results.contains(&result.as_str()),
+            "Result '{}' is not one of the expected values",
+            result
         );
     }
 

@@ -1,6 +1,7 @@
 use crate::parser::evaluator::Value;
 use colour_utils::operations::{blend, darken, multiply_brightness};
 use colour_utils::Colour;
+use rand::seq::IndexedRandom;
 
 pub fn builtin_darken(args: &[Value]) -> Result<Value, String> {
     if args.len() != 2 {
@@ -117,4 +118,37 @@ pub fn builtin_multiply_brightness(args: &[Value]) -> Result<Value, String> {
     };
 
     Ok(Value::Colour(modified_colour))
+}
+
+pub fn builtin_random_select(args: &[Value]) -> Result<Value, String> {
+    if args.is_empty() {
+        return Err("random_select function expects at least 1 argument".to_string());
+    }
+
+    let mut rng = rand::rng();
+    if let Some(selected) = args.choose(&mut rng) {
+        Ok(selected.clone())
+    } else {
+        Err("Failed to select a random value".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::evaluator::Value;
+
+    #[test]
+    fn test_builtin_random_select() {
+        let args = vec![
+            Value::String("apple".to_string()),
+            Value::String("banana".to_string()),
+            Value::String("cherry".to_string()),
+        ];
+
+        let result = builtin_random_select(&args);
+        assert!(result.is_ok());
+        let selected_value = result.unwrap();
+        assert!(args.contains(&selected_value));
+    }
 }

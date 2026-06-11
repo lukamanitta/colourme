@@ -12,3 +12,4 @@ toml = "0.8.8"
 shellexpand = "3.1.0"
 serde = { version = "1.0.198", features = ["derive"] }
 regex = "1.10.4"
+rand = "0.10.1"
