@@ -49,6 +49,17 @@ impl<'a> Evaluator<'a> {
                 Value::Colour(c) => Ok(c.hex().to_string()),
                 Value::Number(_) => Err("Expected a hex value, got a number".to_string()),
             },
+            "hexa" => match result {
+                Value::String(s) => {
+                    let colour = Colour::new(&s);
+                    match colour {
+                        Ok(c) => Ok(c.rgba().to_hex_string()),
+                        Err(e) => Err(format!("Failed to parse '{}' as a colour: {}", s, e)),
+                    }
+                }
+                Value::Colour(c) => Ok(c.rgba().to_hex_string()),
+                Value::Number(_) => Err("Expected a hex value, got a number".to_string()),
+            },
             "rgb" => match result {
                 Value::String(s) => {
                     let colour = Colour::new(&s);
