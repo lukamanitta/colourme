@@ -16,11 +16,53 @@ use config::Config;
 
 extern crate shellexpand;
 
-const TEMPLATE_EXPR_REGEX_STR: &str = r"\{\{(.*)\}\}";
+const TEMPLATE_EXPR_REGEX_STR: &str = r"\{\{(.*?)\}\}";
 
 struct ColourDefinition {
     label: String,
     colour_str: String,
+}
+
+fn resolve_post_hook(
+    post_hook: &str,
+    engine: &TemplateEngine,
+    colour_definitions: &mut Vec<ColourDefinition>,
+    template_expr_regex: &Regex,
+) -> Result<String, String> {
+    let mut resolved_post_hook = post_hook.to_string();
+
+    let post_hook_expr_matches: Vec<String> = template_expr_regex
+        .find_iter(post_hook)
+        .map(|m| m.as_str().to_string())
+        .collect();
+
+    for template_expr in post_hook_expr_matches {
+        if let Some(existing) = colour_definitions
+            .iter()
+            .find(|def| def.label == template_expr)
+        {
+            resolved_post_hook = resolved_post_hook.replace(&existing.label, &existing.colour_str);
+            continue;
+        }
+
+        let stripped_expr = template_expr.trim_matches(|c| c == '{' || c == '}').trim();
+
+        let resolved_colour_str = engine.resolve_block(stripped_expr).map_err(|e| {
+            format!(
+                "Error resolving post-hook expression '{}': {}",
+                template_expr, e
+            )
+        })?;
+
+        colour_definitions.push(ColourDefinition {
+            label: template_expr.clone(),
+            colour_str: resolved_colour_str.clone(),
+        });
+
+        resolved_post_hook = resolved_post_hook.replace(&template_expr, &resolved_colour_str);
+    }
+
+    Ok(resolved_post_hook)
 }
 
 fn usage() {
@@ -142,49 +184,23 @@ fn main() {
         destination_file.flush().unwrap();
 
         if let Some(post_hook) = &entry.post_hook {
-            let mut resolved_post_hook = post_hook.clone();
-
-            let post_hook_expr_matches: Vec<String> = template_expr_regex
-                .find_iter(post_hook)
-                .map(|m| m.as_str().to_string())
-                .collect();
-
-            for template_expr in post_hook_expr_matches {
-                // Reuse a colour already resolved from a template if possible
-                if let Some(existing) = colour_definitions
-                    .iter()
-                    .find(|def| def.label == template_expr)
-                {
-                    resolved_post_hook =
-                        resolved_post_hook.replace(&existing.label, &existing.colour_str);
-                    continue;
+            let resolved_post_hook = match resolve_post_hook(
+                post_hook,
+                &engine,
+                &mut colour_definitions,
+                &template_expr_regex,
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    exit(1);
                 }
+            };
 
-                let stripped_expr = template_expr
-                    .trim_matches(|c| c == '{' || c == '}')
-                    .trim();
-
-                let resolved_colour_str = match engine.resolve_block(stripped_expr) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        eprintln!(
-                            "Error resolving post-hook expression '{}': {}",
-                            template_expr, e
-                        );
-                        exit(1);
-                    }
-                };
-
-                colour_definitions.push(ColourDefinition {
-                    label: template_expr.clone(),
-                    colour_str: resolved_colour_str.clone(),
-                });
-
-                resolved_post_hook =
-                    resolved_post_hook.replace(&template_expr, &resolved_colour_str);
-            }
-
-            println!("[{}] Executing post-hook: {}", &entry.name, resolved_post_hook);
+            println!(
+                "[{}] Executing post-hook: {}",
+                &entry.name, resolved_post_hook
+            );
             match std::process::Command::new("sh")
                 .arg("-c")
                 .arg(&resolved_post_hook)
@@ -206,5 +222,87 @@ fn main() {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_toml() -> Table {
+        let toml_str = r#"
+            [colors]
+            primary = '#FF0000'
+            secondary = '#00FF00'
+        "#;
+        toml_str.parse::<Table>().unwrap()
+    }
+
+    #[test]
+    fn test_post_hook_resolves_single_expression() {
+        let toml_table = test_toml();
+        let engine = TemplateEngine::new(&toml_table);
+        let mut colour_definitions = Vec::new();
+        let regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
+
+        let post_hook = "swaymsg output * bg {{hex:colors.primary}}";
+        let resolved =
+            resolve_post_hook(post_hook, &engine, &mut colour_definitions, &regex).unwrap();
+
+        assert_eq!(resolved, "swaymsg output * bg FF0000");
+        assert_eq!(colour_definitions.len(), 1);
+        assert_eq!(colour_definitions[0].label, "{{hex:colors.primary}}");
+        assert_eq!(colour_definitions[0].colour_str, "FF0000");
+    }
+
+    #[test]
+    fn test_post_hook_reuses_existing_definition() {
+        let toml_table = test_toml();
+        let engine = TemplateEngine::new(&toml_table);
+        let mut colour_definitions = vec![ColourDefinition {
+            label: "{{hex:colors.primary}}".to_string(),
+            colour_str: "FF0000".to_string(),
+        }];
+        let regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
+
+        let post_hook = "notify-send {{hex:colors.primary}}";
+        let resolved =
+            resolve_post_hook(post_hook, &engine, &mut colour_definitions, &regex).unwrap();
+
+        assert_eq!(resolved, "notify-send FF0000");
+        assert_eq!(colour_definitions.len(), 1); // No new definition added
+    }
+
+    #[test]
+    fn test_post_hook_resolves_multiple_and_new() {
+        let toml_table = test_toml();
+        let engine = TemplateEngine::new(&toml_table);
+        let mut colour_definitions = vec![ColourDefinition {
+            label: "{{hex:colors.primary}}".to_string(),
+            colour_str: "FF0000".to_string(),
+        }];
+        let regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
+
+        let post_hook = "{{hex:colors.primary}} and {{hex:colors.secondary}}";
+        let resolved =
+            resolve_post_hook(post_hook, &engine, &mut colour_definitions, &regex).unwrap();
+
+        assert_eq!(resolved, "FF0000 and 00FF00");
+        assert_eq!(colour_definitions.len(), 2);
+        assert_eq!(colour_definitions[1].label, "{{hex:colors.secondary}}");
+        assert_eq!(colour_definitions[1].colour_str, "00FF00");
+    }
+
+    #[test]
+    fn test_post_hook_error_on_invalid_expression() {
+        let toml_table = test_toml();
+        let engine = TemplateEngine::new(&toml_table);
+        let mut colour_definitions = Vec::new();
+        let regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
+
+        let post_hook = "cmd {{hex:colors.missing}}";
+        let result = resolve_post_hook(post_hook, &engine, &mut colour_definitions, &regex);
+
+        assert!(result.is_err());
     }
 }
