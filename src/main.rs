@@ -142,10 +142,52 @@ fn main() {
         destination_file.flush().unwrap();
 
         if let Some(post_hook) = &entry.post_hook {
-            println!("[{}] Executing post-hook: {}", &entry.name, post_hook);
+            let mut resolved_post_hook = post_hook.clone();
+
+            let post_hook_expr_matches: Vec<String> = template_expr_regex
+                .find_iter(post_hook)
+                .map(|m| m.as_str().to_string())
+                .collect();
+
+            for template_expr in post_hook_expr_matches {
+                // Reuse a colour already resolved from a template if possible
+                if let Some(existing) = colour_definitions
+                    .iter()
+                    .find(|def| def.label == template_expr)
+                {
+                    resolved_post_hook =
+                        resolved_post_hook.replace(&existing.label, &existing.colour_str);
+                    continue;
+                }
+
+                let stripped_expr = template_expr
+                    .trim_matches(|c| c == '{' || c == '}')
+                    .trim();
+
+                let resolved_colour_str = match engine.resolve_block(stripped_expr) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!(
+                            "Error resolving post-hook expression '{}': {}",
+                            template_expr, e
+                        );
+                        exit(1);
+                    }
+                };
+
+                colour_definitions.push(ColourDefinition {
+                    label: template_expr.clone(),
+                    colour_str: resolved_colour_str.clone(),
+                });
+
+                resolved_post_hook =
+                    resolved_post_hook.replace(&template_expr, &resolved_colour_str);
+            }
+
+            println!("[{}] Executing post-hook: {}", &entry.name, resolved_post_hook);
             match std::process::Command::new("sh")
                 .arg("-c")
-                .arg(post_hook)
+                .arg(&resolved_post_hook)
                 .status()
             {
                 Ok(status) => {
@@ -159,7 +201,7 @@ fn main() {
                 Err(e) => {
                     eprintln!(
                         "[{}] Failed to execute post-hook command '{}': {}",
-                        &entry.name, post_hook, e
+                        &entry.name, resolved_post_hook, e
                     );
                 }
             }
