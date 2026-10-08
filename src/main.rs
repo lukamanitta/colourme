@@ -1,12 +1,13 @@
 mod config;
 mod engine;
+mod output;
 mod parser;
 
 use engine::TemplateEngine;
 
 use std::env;
 use std::fs;
-use std::io::Write;
+use std::path::Path;
 use std::process::exit;
 
 use regex::Regex;
@@ -162,22 +163,6 @@ fn render_template_file(
     process_template_content(&template_content, engine, colour_definitions, regex)
 }
 
-fn write_output(destination_path: &str, content: &str) -> Result<(), String> {
-    let mut destination_file = std::fs::OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(destination_path)
-        .map_err(|e| format!("Failed to open {}: {}", destination_path, e))?;
-
-    destination_file
-        .write_all(content.as_bytes())
-        .map_err(|e| format!("Failed to write {}: {}", destination_path, e))?;
-    destination_file
-        .flush()
-        .map_err(|e| format!("Failed to flush {}: {}", destination_path, e))
-}
-
 fn run_post_hook(
     entry_name: &str,
     post_hook: &str,
@@ -237,7 +222,7 @@ fn run_with_paths(colourscheme_path: &str, config_path: &str) -> Result<(), Stri
             "[{}] Writing to {}...",
             &entry.name, &entry.destination_path
         );
-        write_output(&entry.destination_path, &resolved_content)?;
+        output::write_atomically(Path::new(&entry.destination_path), &resolved_content)?;
 
         if let Some(post_hook) = &entry.post_hook {
             run_post_hook(
