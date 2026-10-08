@@ -108,7 +108,7 @@ pub fn builtin_blend(args: &[Value]) -> Result<Value, String> {
     };
 
     let mut constructed_colour2: Option<Colour>;
-    let colour2 = match &args[0] {
+    let colour2 = match &args[1] {
         Value::Colour(ref c) => c,
         Value::String(s) => {
             constructed_colour2 = match Colour::new(s) {
@@ -199,5 +199,38 @@ mod tests {
         assert!(result.is_ok());
         let selected_value = result.unwrap();
         assert!(args.contains(&selected_value));
+    }
+
+    #[test]
+    fn test_builtin_blend_uses_second_argument() {
+        let args = vec![
+            Value::Colour(Colour::new("#FF0000").unwrap()),
+            Value::Colour(Colour::new("#0000FF").unwrap()),
+            Value::Number(0.5),
+        ];
+
+        let result = builtin_blend(&args).unwrap();
+        let expected = blend(
+            &Colour::new("#FF0000").unwrap(),
+            &Colour::new("#0000FF").unwrap(),
+            0.5,
+        )
+        .unwrap();
+
+        assert_eq!(result, Value::Colour(expected));
+        // Blending with a distinct second colour must not reproduce the first.
+        assert_ne!(result, args[0]);
+    }
+
+    #[test]
+    fn test_builtin_blend_rejects_invalid_second_argument() {
+        let args = vec![
+            Value::Colour(Colour::new("#FF0000").unwrap()),
+            Value::String("not-a-colour".to_string()),
+            Value::Number(0.5),
+        ];
+
+        let err = builtin_blend(&args).unwrap_err();
+        assert_eq!(err, "Second argument to blend must be a colour");
     }
 }
