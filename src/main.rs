@@ -44,6 +44,10 @@ struct Cli {
     #[arg(long = "dest-root", value_name = "DIR")]
     dest_root: Option<PathBuf>,
 
+    /// Render and write, but run no post-hook commands.
+    #[arg(long = "no-hooks")]
+    no_hooks: bool,
+
     /// Resolve and render everything, but run nothing and write nothing.
     #[arg(long = "dry-run")]
     dry_run: bool,
@@ -61,6 +65,7 @@ struct RunOptions {
     dest_root: Option<PathBuf>,
     home: PathBuf,
     cwd: PathBuf,
+    no_hooks: bool,
     dry_run: bool,
 }
 
@@ -80,6 +85,7 @@ impl RunOptions {
                 .map(|root| paths::resolve_dest_root(root, &cwd)),
             home,
             cwd,
+            no_hooks: cli.no_hooks,
             dry_run: cli.dry_run,
         })
     }
@@ -316,7 +322,11 @@ fn render_entry(
     output::write_atomically(&destination, &resolved_content)?;
 
     if let Some(post_hook) = &entry.post_hook {
-        run_post_hook(&entry.name, post_hook, engine, colour_definitions, regex)?;
+        if options.no_hooks {
+            println!("[{}] skipping post-hook (--no-hooks)", entry.name);
+        } else {
+            run_post_hook(&entry.name, post_hook, engine, colour_definitions, regex)?;
+        }
     }
 
     Ok(())
@@ -420,6 +430,7 @@ mod tests {
             dest_root: None,
             home: paths::home_dir().unwrap(),
             cwd: paths::current_dir().unwrap(),
+            no_hooks: false,
             dry_run: false,
         }
     }
@@ -726,6 +737,7 @@ mod tests {
             dest_root: Some(out.clone()),
             home,
             cwd: dir.clone(),
+            no_hooks: false,
             dry_run: false,
         };
         run_scheme_file(&options, &scheme_path).unwrap();
@@ -768,6 +780,72 @@ mod tests {
 
         assert!(!dest_path.exists(), "dry-run must not write output");
         assert!(!sentinel.exists(), "dry-run must not run post-hooks");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_no_hooks_writes_output_but_skips_hook() {
+        let dir = unique_temp_dir("nohooks");
+        let sentinel = dir.join("sentinel");
+
+        let scheme_path = dir.join("scheme.toml");
+        fs::write(&scheme_path, "[colors]\nprimary = '#FF0000'\n").unwrap();
+
+        let template_path = dir.join("template.txt");
+        fs::write(&template_path, "{{hex:colors.primary}}").unwrap();
+
+        let dest_path = dir.join("out.txt");
+        let config_path = dir.join("config.toml");
+        fs::write(
+            &config_path,
+            format!(
+                "[entry]\ntemplate = \"{}\"\ndestination = \"{}\"\npost_hook = \"touch {}\"\n",
+                template_path.display(),
+                dest_path.display(),
+                sentinel.display()
+            ),
+        )
+        .unwrap();
+
+        let mut options = test_options(&config_path);
+        options.no_hooks = true;
+        run_scheme_file(&options, &scheme_path).unwrap();
+
+        assert_eq!(fs::read_to_string(&dest_path).unwrap(), "FF0000");
+        assert!(!sentinel.exists(), "--no-hooks must not run post-hooks");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_hooks_run_by_default() {
+        let dir = unique_temp_dir("hooks");
+        let sentinel = dir.join("sentinel");
+
+        let scheme_path = dir.join("scheme.toml");
+        fs::write(&scheme_path, "[colors]\nprimary = '#FF0000'\n").unwrap();
+
+        let template_path = dir.join("template.txt");
+        fs::write(&template_path, "{{hex:colors.primary}}").unwrap();
+
+        let dest_path = dir.join("out.txt");
+        let config_path = dir.join("config.toml");
+        fs::write(
+            &config_path,
+            format!(
+                "[entry]\ntemplate = \"{}\"\ndestination = \"{}\"\npost_hook = \"touch {}\"\n",
+                template_path.display(),
+                dest_path.display(),
+                sentinel.display()
+            ),
+        )
+        .unwrap();
+
+        let options = test_options(&config_path);
+        run_scheme_file(&options, &scheme_path).unwrap();
+
+        assert!(sentinel.exists(), "post-hook should run without --no-hooks");
 
         fs::remove_dir_all(&dir).ok();
     }
