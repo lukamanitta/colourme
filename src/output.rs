@@ -26,9 +26,8 @@ fn resolve_symlink_target(path: &Path) -> Result<PathBuf, String> {
                     ));
                 }
                 seen.push(current.clone());
-                let link = fs::read_link(&current).map_err(|e| {
-                    format!("Failed to read symlink {}: {}", current.display(), e)
-                })?;
+                let link = fs::read_link(&current)
+                    .map_err(|e| format!("Failed to read symlink {}: {}", current.display(), e))?;
                 current = if link.is_absolute() {
                     link
                 } else {
@@ -45,11 +44,7 @@ fn resolve_symlink_target(path: &Path) -> Result<PathBuf, String> {
 
 fn temp_path(directory: &Path) -> PathBuf {
     let counter = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    directory.join(format!(
-        ".colourme.{}.{}.tmp",
-        std::process::id(),
-        counter
-    ))
+    directory.join(format!(".colourme.{}.{}.tmp", std::process::id(), counter))
 }
 
 /// Write `content` to `destination`, atomically and following symlinks.
@@ -65,10 +60,7 @@ pub fn write_atomically(destination: &Path, content: &str) -> Result<(), String>
 
     if let Ok(meta) = fs::symlink_metadata(&target) {
         if meta.is_dir() {
-            return Err(format!(
-                "Destination {} is a directory",
-                target.display()
-            ));
+            return Err(format!("Destination {} is a directory", target.display()));
         }
     }
 
@@ -109,7 +101,11 @@ pub fn write_atomically(destination: &Path, content: &str) -> Result<(), String>
 
     if let Err(e) = fs::rename(&temp, &target) {
         let _ = fs::remove_file(&temp);
-        return Err(format!("Failed to move output into place at {}: {}", target.display(), e));
+        return Err(format!(
+            "Failed to move output into place at {}: {}",
+            target.display(),
+            e
+        ));
     }
 
     Ok(())
@@ -172,7 +168,10 @@ mod tests {
         write_atomically(&link, "new").unwrap();
 
         assert_eq!(fs::read_to_string(&target).unwrap(), "new");
-        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 
     #[test]
@@ -186,7 +185,10 @@ mod tests {
         write_atomically(&link, "created").unwrap();
 
         assert_eq!(fs::read_to_string(&target).unwrap(), "created");
-        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 
     #[test]
@@ -208,14 +210,21 @@ mod tests {
         // Restore permissions so the TempDir can be cleaned up.
         fs::set_permissions(&read_only, fs::Permissions::from_mode(0o755)).unwrap();
 
-        assert!(result.is_err(), "expected writing into a read-only dir to fail");
+        assert!(
+            result.is_err(),
+            "expected writing into a read-only dir to fail"
+        );
         assert!(!locked_destination.exists());
         assert_eq!(fs::read_to_string(&destination).unwrap(), "original");
         let leftovers: Vec<_> = fs::read_dir(&read_only)
             .unwrap()
             .filter_map(|e| e.ok())
             .collect();
-        assert!(leftovers.is_empty(), "temp file left behind: {:?}", leftovers);
+        assert!(
+            leftovers.is_empty(),
+            "temp file left behind: {:?}",
+            leftovers
+        );
     }
 
     #[test]

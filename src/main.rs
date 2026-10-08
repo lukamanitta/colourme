@@ -91,9 +91,7 @@ impl RunOptions {
     }
 
     fn config_dir(&self) -> &Path {
-        self.config_path
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
+        self.config_path.parent().unwrap_or_else(|| Path::new("."))
     }
 }
 
@@ -140,8 +138,13 @@ fn resolve_post_hook(
 }
 
 fn load_colorscheme_from_path(colourscheme_path: &Path) -> Result<Table, String> {
-    let content = fs::read_to_string(colourscheme_path)
-        .map_err(|why| format!("Couldn't read file {}: {}", colourscheme_path.display(), why))?;
+    let content = fs::read_to_string(colourscheme_path).map_err(|why| {
+        format!(
+            "Couldn't read file {}: {}",
+            colourscheme_path.display(),
+            why
+        )
+    })?;
     content
         .parse::<Table>()
         .map_err(|e| format!("Failed to parse {}: {}", colourscheme_path.display(), e))
@@ -367,8 +370,7 @@ fn render_entry(
         &options.cwd,
     );
 
-    let resolved_content =
-        render_template_file(&template_path, engine, colour_definitions, regex)?;
+    let resolved_content = render_template_file(&template_path, engine, colour_definitions, regex)?;
 
     if options.dry_run {
         println!(
@@ -390,7 +392,8 @@ fn render_entry(
     if let Some(post_hook) = &entry.post_hook {
         if options.no_hooks {
             println!("[{}] skipping post-hook (--no-hooks)", entry.name);
-        } else if let Err(e) = run_post_hook(&entry.name, post_hook, engine, colour_definitions, regex)
+        } else if let Err(e) =
+            run_post_hook(&entry.name, post_hook, engine, colour_definitions, regex)
         {
             hook_failures.push(e);
         }
@@ -956,7 +959,10 @@ mod tests {
         let options = test_options(&config_path);
         let result = run_scheme_file(&options, &scheme_path);
 
-        assert!(result.is_err(), "a failed post-hook must surface as an error");
+        assert!(
+            result.is_err(),
+            "a failed post-hook must surface as an error"
+        );
         assert!(dest_a.exists(), "entry before the failure still written");
         assert!(dest_b.exists(), "entry after the failure still written");
 
@@ -993,7 +999,11 @@ mod tests {
         let warnings = missing_scheme_keys(&engine, &config, &options, &regex);
 
         assert_eq!(warnings.len(), 1, "got: {:?}", warnings);
-        assert!(warnings[0].contains("colors.accent"), "got: {}", warnings[0]);
+        assert!(
+            warnings[0].contains("colors.accent"),
+            "got: {}",
+            warnings[0]
+        );
         assert!(warnings[0].contains("[single]"), "got: {}", warnings[0]);
 
         fs::remove_dir_all(&dir).ok();

@@ -109,8 +109,7 @@ pub fn builtin_invert(args: &[Value]) -> Result<Value, String> {
 
     let colour = colour_argument(args, 0, "First", "invert")?;
 
-    let inverted_colour =
-        invert(&colour).map_err(|e| format!("Failed to invert colour: {}", e))?;
+    let inverted_colour = invert(&colour).map_err(|e| format!("Failed to invert colour: {}", e))?;
 
     Ok(Value::Colour(inverted_colour))
 }

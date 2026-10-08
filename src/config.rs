@@ -21,9 +21,9 @@ impl Config {
 
         let mut entries = Vec::new();
         for (key, value) in config_table.iter() {
-            let entry_table = value.as_table().ok_or_else(|| {
-                format!("Config entry '{}' must be a table", key)
-            })?;
+            let entry_table = value
+                .as_table()
+                .ok_or_else(|| format!("Config entry '{}' must be a table", key))?;
 
             let template = entry_table
                 .get("template")
@@ -113,8 +113,7 @@ mod tests {
 
     #[test]
     fn test_config_rejects_non_string_template() {
-        let err =
-            Config::new("[hypr]\ntemplate = 3\ndestination = \"/d/hypr.lua\"\n").unwrap_err();
+        let err = Config::new("[hypr]\ntemplate = 3\ndestination = \"/d/hypr.lua\"\n").unwrap_err();
         assert!(err.contains("'hypr'"), "got: {}", err);
     }
 

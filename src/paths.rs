@@ -245,7 +245,13 @@ mod tests {
     #[test]
     fn relative_dest_root_resolves_against_cwd() {
         let cwd = PathBuf::from("/tmp/work");
-        assert_eq!(resolve_dest_root(Path::new("root"), &cwd), PathBuf::from("/tmp/work/root"));
-        assert_eq!(resolve_dest_root(Path::new("/root"), &cwd), PathBuf::from("/root"));
+        assert_eq!(
+            resolve_dest_root(Path::new("root"), &cwd),
+            PathBuf::from("/tmp/work/root")
+        );
+        assert_eq!(
+            resolve_dest_root(Path::new("/root"), &cwd),
+            PathBuf::from("/root")
+        );
     }
 }
