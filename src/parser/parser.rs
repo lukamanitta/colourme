@@ -142,7 +142,7 @@ mod tests {
     use super::*;
     use crate::parser::lexer::Lexer;
 
-    fn parse_str(input: &str) -> TemplateBlock {
+    fn parse_str(input: &str) -> TemplateBlock<'_> {
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);

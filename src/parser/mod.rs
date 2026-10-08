@@ -8,4 +8,3 @@ pub mod token;
 pub use evaluator::Evaluator;
 pub use lexer::Lexer;
 pub use parser::Parser;
-pub use token::Token;
