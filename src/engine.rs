@@ -1,5 +1,26 @@
+use crate::parser::ast::Expr;
 use crate::parser::{Evaluator, Lexer, Parser};
 use toml::Table;
+
+/// The scheme keys referenced by a single `{{ ... }}` template block.
+pub struct BlockReferences {
+    /// True when the block contains `||` fallbacks, meaning the author has
+    /// explicitly allowed some referenced keys to be absent.
+    pub has_fallback: bool,
+    pub identifiers: Vec<Vec<String>>,
+}
+
+fn collect_identifiers(expr: &Expr, out: &mut Vec<Vec<String>>) {
+    match expr {
+        Expr::Identifier(parts) => out.push(parts.iter().map(|s| s.to_string()).collect()),
+        Expr::Function { args, .. } => {
+            for arg in args {
+                collect_identifiers(arg, out);
+            }
+        }
+        Expr::Hex(_) | Expr::Number(_) => {}
+    }
+}
 
 pub struct TemplateEngine<'a> {
     evaluator: Evaluator<'a>,
@@ -10,6 +31,30 @@ impl<'a> TemplateEngine<'a> {
         Self {
             evaluator: Evaluator::new(toml_table),
         }
+    }
+
+    /// Whether `path` resolves to a value in the scheme table.
+    pub fn path_exists(&self, path: &[String]) -> bool {
+        self.evaluator.path_exists(path)
+    }
+
+    /// The scheme keys referenced by `source`, or `None` if it does not parse.
+    /// Used to warn about missing keys before rendering.
+    pub fn references(&self, source: &str) -> Option<BlockReferences> {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().ok()?;
+        let mut parser = Parser::new(tokens);
+        let block = parser.parse().ok()?;
+
+        let mut identifiers = Vec::new();
+        for fallback in &block.fallbacks {
+            collect_identifiers(&fallback.expr, &mut identifiers);
+        }
+
+        Some(BlockReferences {
+            has_fallback: block.fallbacks.len() > 1,
+            identifiers,
+        })
     }
 
     pub fn resolve_block(&self, source: &str) -> Result<String, String> {

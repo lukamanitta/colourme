@@ -40,6 +40,22 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    /// Whether `path` resolves to a value in the scheme table.
+    pub fn path_exists(&self, path: &[String]) -> bool {
+        let mut current: Option<&TomlValue> = None;
+        for part in path {
+            current = match current {
+                None => self.toml_table.get(part.as_str()),
+                Some(TomlValue::Table(table)) => table.get(part.as_str()),
+                Some(_) => return false,
+            };
+            if current.is_none() {
+                return false;
+            }
+        }
+        current.is_some()
+    }
+
     pub fn evaluate(&self, template: &TemplateExpr) -> Result<String, String> {
         let result = self.evaluate_expr(&template.expr)?;
 

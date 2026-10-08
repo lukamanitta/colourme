@@ -259,6 +259,55 @@ fn run_post_hook(
     Ok(())
 }
 
+/// Warn about scheme keys referenced by a template that are entirely absent,
+/// skipping any block that uses `||` fallbacks (where the author has already
+/// opted into optional keys). This surfaces a genuinely missing key before the
+/// render-time error and without changing fallback behaviour. See REVIEW O8.
+fn missing_scheme_keys(
+    engine: &TemplateEngine,
+    config: &Config,
+    options: &RunOptions,
+    regex: &Regex,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let mut warned = std::collections::HashSet::new();
+
+    for entry in &config.entries {
+        let template_path =
+            paths::resolve_template(&entry.template, options.config_dir(), &options.home);
+        let Ok(content) = fs::read_to_string(&template_path) else {
+            continue;
+        };
+
+        for captures in regex.captures_iter(&content) {
+            let source = captures[1].trim();
+            let Some(references) = engine.references(source) else {
+                continue;
+            };
+            if references.has_fallback {
+                continue;
+            }
+
+            for path in references.identifiers {
+                if engine.path_exists(&path) {
+                    continue;
+                }
+                let key = path.join(".");
+                if warned.insert((entry.name.clone(), key.clone())) {
+                    warnings.push(format!(
+                        "[{}] scheme has no key '{}' referenced by {}",
+                        entry.name,
+                        key,
+                        template_path.display()
+                    ));
+                }
+            }
+        }
+    }
+
+    warnings
+}
+
 /// Render every entry in `config` using an already-loaded scheme file.
 fn run_scheme_file(options: &RunOptions, colourscheme_path: &Path) -> Result<(), String> {
     let colourscheme_table = load_colorscheme_from_path(colourscheme_path)?;
@@ -268,6 +317,10 @@ fn run_scheme_file(options: &RunOptions, colourscheme_path: &Path) -> Result<(),
     let mut colour_definitions: Vec<ColourDefinition> = Vec::new();
     let engine = TemplateEngine::new(&colourscheme_table);
     let template_expr_regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
+
+    for warning in missing_scheme_keys(&engine, &config, options, &template_expr_regex) {
+        eprintln!("warning: {}", warning);
+    }
 
     let mut hook_failures: Vec<String> = Vec::new();
     for entry in config.entries.iter() {
@@ -901,6 +954,42 @@ mod tests {
         assert!(result.is_err(), "a failed post-hook must surface as an error");
         assert!(dest_a.exists(), "entry before the failure still written");
         assert!(dest_b.exists(), "entry after the failure still written");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_missing_scheme_keys_warns_without_fallbacks_only() {
+        let dir = unique_temp_dir("schemecheck");
+        let config_path = dir.join("config.toml");
+        fs::write(
+            &config_path,
+            format!(
+                "[single]\ntemplate = \"{single}\"\ndestination = \"/tmp/x\"\n\n\
+                 [fallback]\ntemplate = \"{fallback}\"\ndestination = \"/tmp/y\"\n",
+                single = dir.join("single.txt").display(),
+                fallback = dir.join("fallback.txt").display(),
+            ),
+        )
+        .unwrap();
+        fs::write(dir.join("single.txt"), "{{hex:colors.accent}}").unwrap();
+        fs::write(
+            dir.join("fallback.txt"),
+            "{{hex:colors.accent || hex:colors.primary}}",
+        )
+        .unwrap();
+
+        let scheme = "[colors]\nprimary = '#FF0000'\n".parse::<Table>().unwrap();
+        let engine = TemplateEngine::new(&scheme);
+        let config = load_config_from_path(&config_path).unwrap();
+        let options = test_options(&config_path);
+        let regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
+
+        let warnings = missing_scheme_keys(&engine, &config, &options, &regex);
+
+        assert_eq!(warnings.len(), 1, "got: {:?}", warnings);
+        assert!(warnings[0].contains("colors.accent"), "got: {}", warnings[0]);
+        assert!(warnings[0].contains("[single]"), "got: {}", warnings[0]);
 
         fs::remove_dir_all(&dir).ok();
     }
