@@ -40,6 +40,10 @@ struct Cli {
     #[arg(long = "schemes-dir", value_name = "DIR", env = "COLOURME_SCHEMES_DIR")]
     schemes_dir: Option<PathBuf>,
 
+    /// Re-root `$HOME`-based destinations under this directory.
+    #[arg(long = "dest-root", value_name = "DIR")]
+    dest_root: Option<PathBuf>,
+
     /// Resolve and render everything, but run nothing and write nothing.
     #[arg(long = "dry-run")]
     dry_run: bool,
@@ -54,6 +58,7 @@ struct ColourDefinition {
 struct RunOptions {
     config_path: PathBuf,
     schemes_dir: PathBuf,
+    dest_root: Option<PathBuf>,
     home: PathBuf,
     cwd: PathBuf,
     dry_run: bool,
@@ -69,6 +74,10 @@ impl RunOptions {
         Ok(Self {
             config_path: paths::resolve_config_path(cli.config.as_deref(), &home, &xdg),
             schemes_dir: paths::resolve_schemes_dir(cli.schemes_dir.as_deref(), &home, &xdg),
+            dest_root: cli
+                .dest_root
+                .as_deref()
+                .map(|root| paths::resolve_dest_root(root, &cwd)),
             home,
             cwd,
             dry_run: cli.dry_run,
@@ -279,8 +288,12 @@ fn render_entry(
 ) -> Result<(), String> {
     let template_path =
         paths::resolve_template(&entry.template, options.config_dir(), &options.home);
-    let destination =
-        paths::resolve_destination(&entry.destination, None, &options.home, &options.cwd);
+    let destination = paths::resolve_destination(
+        &entry.destination,
+        options.dest_root.as_deref(),
+        &options.home,
+        &options.cwd,
+    );
 
     let resolved_content =
         render_template_file(&template_path, engine, colour_definitions, regex)?;
@@ -404,6 +417,7 @@ mod tests {
         RunOptions {
             config_path: config_path.to_path_buf(),
             schemes_dir: PathBuf::new(),
+            dest_root: None,
             home: paths::home_dir().unwrap(),
             cwd: paths::current_dir().unwrap(),
             dry_run: false,
@@ -618,6 +632,8 @@ mod tests {
             "/tmp/c.toml",
             "--schemes-dir",
             "/tmp/s",
+            "--dest-root",
+            "/out",
             "--dry-run",
             "Gruvbox",
         ])
@@ -626,6 +642,7 @@ mod tests {
         assert_eq!(cli.scheme, "Gruvbox");
         assert_eq!(cli.config.as_deref(), Some(Path::new("/tmp/c.toml")));
         assert_eq!(cli.schemes_dir.as_deref(), Some(Path::new("/tmp/s")));
+        assert_eq!(cli.dest_root.as_deref(), Some(Path::new("/out")));
         assert!(cli.dry_run);
     }
 
@@ -678,6 +695,47 @@ mod tests {
     fn test_available_schemes_errors_on_missing_dir() {
         let missing = unique_temp_dir("missing").join("nope");
         assert!(available_schemes(&missing).is_err());
+    }
+
+    #[test]
+    fn test_dest_root_re_roots_home_destinations() {
+        let dir = unique_temp_dir("destroot");
+        let home = dir.join("home");
+        let out = dir.join("out");
+        fs::create_dir_all(&home).unwrap();
+
+        let scheme_path = dir.join("scheme.toml");
+        fs::write(&scheme_path, "[colors]\nprimary = '#FF0000'\n").unwrap();
+
+        let template_path = dir.join("template.txt");
+        fs::write(&template_path, "{{hex:colors.primary}}").unwrap();
+
+        let config_path = dir.join("config.toml");
+        fs::write(
+            &config_path,
+            format!(
+                "[entry]\ntemplate = \"{}\"\ndestination = \"~/.config/x/out.txt\"\n",
+                template_path.display()
+            ),
+        )
+        .unwrap();
+
+        let options = RunOptions {
+            config_path,
+            schemes_dir: PathBuf::new(),
+            dest_root: Some(out.clone()),
+            home,
+            cwd: dir.clone(),
+            dry_run: false,
+        };
+        run_scheme_file(&options, &scheme_path).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(out.join(".config/x/out.txt")).unwrap(),
+            "FF0000"
+        );
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
