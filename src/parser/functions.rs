@@ -14,7 +14,7 @@ pub fn builtin_h(args: &[Value]) -> Result<Value, String> {
         Value::String(s) => {
             constructed_colour = match Colour::new(s) {
                 Ok(c) => Some(c),
-                Err(_) => return Err("First argument to darken must be a colour".to_string()),
+                Err(_) => return Err("First argument to h must be a colour".to_string()),
             };
             constructed_colour.as_ref().unwrap()
         }
@@ -199,6 +199,12 @@ mod tests {
         assert!(result.is_ok());
         let selected_value = result.unwrap();
         assert!(args.contains(&selected_value));
+    }
+
+    #[test]
+    fn test_builtin_h_reports_its_own_name_on_bad_string() {
+        let err = builtin_h(&[Value::String("not-a-colour".to_string())]).unwrap_err();
+        assert_eq!(err, "First argument to h must be a colour");
     }
 
     #[test]
