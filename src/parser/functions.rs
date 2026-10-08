@@ -3,6 +3,55 @@ use colour_utils::operations::{blend, darken, multiply_brightness};
 use colour_utils::Colour;
 use rand::seq::IndexedRandom;
 
+pub fn builtin_h(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("h function expects 1 argument, got {}", args.len()));
+    }
+
+    let mut constructed_colour: Option<Colour> = None;
+    let colour = match &args[0] {
+        Value::Colour(ref c) => c,
+        Value::String(s) => {
+            constructed_colour = match Colour::new(s) {
+                Ok(c) => Some(c),
+                Err(_) => return Err("First argument to darken must be a colour".to_string()),
+            };
+            constructed_colour.as_ref().unwrap()
+        }
+        _ => return Err("Argument to h must be a colour".to_string()),
+    };
+
+    Ok(Value::Number(*colour.hsv().h()))
+}
+
+pub fn builtin_hsv(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 3 {
+        return Err(format!(
+            "hsv function expects 3 arguments, got {}",
+            args.len()
+        ));
+    }
+
+    let h = match &args[0] {
+        Value::Number(n) => *n,
+        _ => return Err("First argument to hsv must be a number".to_string()),
+    };
+
+    let s = match &args[1] {
+        Value::Number(n) => *n,
+        _ => return Err("Second argument to hsv must be a number".to_string()),
+    };
+
+    let v = match &args[2] {
+        Value::Number(n) => *n,
+        _ => return Err("Third argument to hsv must be a number".to_string()),
+    };
+
+    let colour = Colour::new_from_hsv(h, s, v)
+        .map_err(|e| format!("Failed to create colour from HSV: {}", e))?;
+    Ok(Value::Colour(colour))
+}
+
 pub fn builtin_darken(args: &[Value]) -> Result<Value, String> {
     if args.len() != 2 {
         return Err(format!(

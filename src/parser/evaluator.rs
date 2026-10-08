@@ -1,6 +1,7 @@
 use crate::parser::ast::{Expr, TemplateExpr};
 use crate::parser::functions::{
-    builtin_blend, builtin_darken, builtin_multiply_brightness, builtin_random_select,
+    builtin_blend, builtin_darken, builtin_h, builtin_hsv, builtin_multiply_brightness,
+    builtin_random_select,
 };
 use colour_utils::Colour;
 use std::collections::HashMap;
@@ -23,6 +24,8 @@ pub struct Evaluator<'a> {
 impl<'a> Evaluator<'a> {
     pub fn new(toml_table: &'a Table) -> Self {
         let mut functions: HashMap<&'static str, FunctionPtr> = HashMap::new();
+        functions.insert("h", builtin_h);
+        functions.insert("hsv", builtin_hsv);
         functions.insert("darken", builtin_darken);
         functions.insert("blend", builtin_blend);
         functions.insert("multiply_brightness", builtin_multiply_brightness);
