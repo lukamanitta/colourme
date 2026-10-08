@@ -238,28 +238,25 @@ fn run_post_hook(
         entry_name, resolved_post_hook
     );
 
-    match std::process::Command::new("sh")
+    let status = std::process::Command::new("sh")
         .arg("-c")
         .arg(&resolved_post_hook)
         .status()
-    {
-        Ok(status) => {
-            if !status.success() {
-                eprintln!(
-                    "[{}] Post-hook command exited with non-zero status: {}",
-                    entry_name, status
-                );
-            }
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!(
+        .map_err(|e| {
+            format!(
                 "[{}] Failed to execute post-hook command '{}': {}",
                 entry_name, resolved_post_hook, e
-            );
-            Ok(())
-        }
+            )
+        })?;
+
+    if !status.success() {
+        return Err(format!(
+            "[{}] Post-hook command exited with non-zero status {}: {}",
+            entry_name, status, resolved_post_hook
+        ));
     }
+
+    Ok(())
 }
 
 /// Render every entry in `config` using an already-loaded scheme file.
@@ -272,6 +269,7 @@ fn run_scheme_file(options: &RunOptions, colourscheme_path: &Path) -> Result<(),
     let engine = TemplateEngine::new(&colourscheme_table);
     let template_expr_regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
 
+    let mut hook_failures: Vec<String> = Vec::new();
     for entry in config.entries.iter() {
         render_entry(
             entry,
@@ -279,7 +277,16 @@ fn run_scheme_file(options: &RunOptions, colourscheme_path: &Path) -> Result<(),
             &mut colour_definitions,
             &template_expr_regex,
             options,
+            &mut hook_failures,
         )?;
+    }
+
+    if !hook_failures.is_empty() {
+        return Err(format!(
+            "{} post-hook(s) failed:\n{}",
+            hook_failures.len(),
+            hook_failures.join("\n")
+        ));
     }
 
     Ok(())
@@ -291,6 +298,7 @@ fn render_entry(
     colour_definitions: &mut Vec<ColourDefinition>,
     regex: &Regex,
     options: &RunOptions,
+    hook_failures: &mut Vec<String>,
 ) -> Result<(), String> {
     let template_path =
         paths::resolve_template(&entry.template, options.config_dir(), &options.home);
@@ -324,8 +332,9 @@ fn render_entry(
     if let Some(post_hook) = &entry.post_hook {
         if options.no_hooks {
             println!("[{}] skipping post-hook (--no-hooks)", entry.name);
-        } else {
-            run_post_hook(&entry.name, post_hook, engine, colour_definitions, regex)?;
+        } else if let Err(e) = run_post_hook(&entry.name, post_hook, engine, colour_definitions, regex)
+        {
+            hook_failures.push(e);
         }
     }
 
@@ -846,6 +855,52 @@ mod tests {
         run_scheme_file(&options, &scheme_path).unwrap();
 
         assert!(sentinel.exists(), "post-hook should run without --no-hooks");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_run_post_hook_reports_failure() {
+        let table = test_toml();
+        let engine = TemplateEngine::new(&table);
+        let mut definitions = Vec::new();
+        let regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
+
+        let err = run_post_hook("entry", "exit 3", &engine, &mut definitions, &regex).unwrap_err();
+        assert!(err.contains("non-zero"), "got: {}", err);
+    }
+
+    #[test]
+    fn test_run_scheme_file_continues_after_hook_failure() {
+        let dir = unique_temp_dir("hookfail");
+
+        let scheme_path = dir.join("scheme.toml");
+        fs::write(&scheme_path, "[colors]\nprimary = '#FF0000'\n").unwrap();
+
+        let template_path = dir.join("template.txt");
+        fs::write(&template_path, "{{hex:colors.primary}}").unwrap();
+
+        let dest_a = dir.join("a.txt");
+        let dest_b = dir.join("b.txt");
+        let config_path = dir.join("config.toml");
+        fs::write(
+            &config_path,
+            format!(
+                "[alpha]\ntemplate = \"{t}\"\ndestination = \"{a}\"\npost_hook = \"exit 1\"\n\n\
+                 [beta]\ntemplate = \"{t}\"\ndestination = \"{b}\"\n",
+                t = template_path.display(),
+                a = dest_a.display(),
+                b = dest_b.display(),
+            ),
+        )
+        .unwrap();
+
+        let options = test_options(&config_path);
+        let result = run_scheme_file(&options, &scheme_path);
+
+        assert!(result.is_err(), "a failed post-hook must surface as an error");
+        assert!(dest_a.exists(), "entry before the failure still written");
+        assert!(dest_b.exists(), "entry after the failure still written");
 
         fs::remove_dir_all(&dir).ok();
     }
