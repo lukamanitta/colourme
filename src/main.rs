@@ -88,7 +88,7 @@ fn load_colorscheme_from_path(colourscheme_path: &str) -> Result<Table, String> 
 fn load_config_from_path(config_path: &str) -> Result<Config, String> {
     let content = fs::read_to_string(config_path)
         .map_err(|why| format!("Couldn't read file {}: {}", config_path, why))?;
-    Ok(Config::new(&content))
+    Config::new(&content)
 }
 
 fn collect_colour_definitions(
