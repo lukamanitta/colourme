@@ -1,7 +1,23 @@
 use crate::parser::evaluator::Value;
-use colour_utils::operations::{blend, darken, multiply_brightness};
+use colour_utils::operations::{
+    blend, darken, invert, invert_brightness, lighten, multiply_brightness,
+};
 use colour_utils::Colour;
 use rand::seq::IndexedRandom;
+
+fn colour_argument(
+    args: &[Value],
+    index: usize,
+    ordinal: &str,
+    function: &str,
+) -> Result<Colour, String> {
+    let invalid = || format!("{} argument to {} must be a colour", ordinal, function);
+    match &args[index] {
+        Value::Colour(c) => Ok(c.clone()),
+        Value::String(s) => Colour::new(s).map_err(|_| invalid()),
+        _ => Err(invalid()),
+    }
+}
 
 pub fn builtin_h(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
@@ -84,6 +100,59 @@ pub fn builtin_darken(args: &[Value]) -> Result<Value, String> {
     };
 
     Ok(Value::Colour(darkened_colour))
+}
+
+pub fn builtin_lighten(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 2 {
+        return Err(format!(
+            "lighten function expects 2 arguments, got {}",
+            args.len()
+        ));
+    }
+
+    let colour = colour_argument(args, 0, "First", "lighten")?;
+
+    let multiplier = match &args[1] {
+        Value::Number(n) => *n,
+        _ => return Err("Second argument to lighten must be a number".to_string()),
+    };
+
+    let lightened_colour =
+        lighten(&colour, multiplier).map_err(|e| format!("Failed to lighten colour: {}", e))?;
+
+    Ok(Value::Colour(lightened_colour))
+}
+
+pub fn builtin_invert(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!(
+            "invert function expects 1 argument, got {}",
+            args.len()
+        ));
+    }
+
+    let colour = colour_argument(args, 0, "First", "invert")?;
+
+    let inverted_colour =
+        invert(&colour).map_err(|e| format!("Failed to invert colour: {}", e))?;
+
+    Ok(Value::Colour(inverted_colour))
+}
+
+pub fn builtin_invert_brightness(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!(
+            "invert_brightness function expects 1 argument, got {}",
+            args.len()
+        ));
+    }
+
+    let colour = colour_argument(args, 0, "First", "invert_brightness")?;
+
+    let inverted_colour =
+        invert_brightness(&colour).map_err(|e| format!("Failed to invert brightness: {}", e))?;
+
+    Ok(Value::Colour(inverted_colour))
 }
 
 pub fn builtin_blend(args: &[Value]) -> Result<Value, String> {

@@ -1,7 +1,7 @@
 use crate::parser::ast::{Expr, TemplateExpr};
 use crate::parser::functions::{
-    builtin_blend, builtin_darken, builtin_h, builtin_hsv, builtin_multiply_brightness,
-    builtin_random_select,
+    builtin_blend, builtin_darken, builtin_h, builtin_hsv, builtin_invert,
+    builtin_invert_brightness, builtin_lighten, builtin_multiply_brightness, builtin_random_select,
 };
 use colour_utils::Colour;
 use std::collections::HashMap;
@@ -27,6 +27,9 @@ impl<'a> Evaluator<'a> {
         functions.insert("h", builtin_h);
         functions.insert("hsv", builtin_hsv);
         functions.insert("darken", builtin_darken);
+        functions.insert("lighten", builtin_lighten);
+        functions.insert("invert", builtin_invert);
+        functions.insert("invert_brightness", builtin_invert_brightness);
         functions.insert("blend", builtin_blend);
         functions.insert("multiply_brightness", builtin_multiply_brightness);
         functions.insert("random_select", builtin_random_select);
@@ -178,6 +181,7 @@ mod tests {
     use super::*;
     use crate::parser::ast::{Expr, TemplateExpr};
     use colour_utils::operations::darken;
+    use colour_utils::operations::lighten;
 
     fn mock_toml() -> Table {
         let toml_str = r#"
@@ -366,6 +370,64 @@ mod tests {
 
         let result = evaluator.evaluate(&ast).unwrap();
         assert_eq!(result, "3.14");
+    }
+
+    #[test]
+    fn test_lighten_is_registered() {
+        let toml_data = mock_toml();
+        let evaluator = Evaluator::new(&toml_data);
+
+        let ast = TemplateExpr {
+            format: "hex",
+            expr: Expr::Function {
+                name: "lighten",
+                args: vec![
+                    Expr::Identifier(vec!["colors", "primary"]),
+                    Expr::Number("0.5"),
+                ],
+            },
+        };
+
+        assert_eq!(
+            evaluator.evaluate(&ast).unwrap(),
+            lighten(&Colour::new("#FF0000").unwrap(), 0.5)
+                .unwrap()
+                .hex()
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn test_invert_is_registered() {
+        let toml_data = mock_toml();
+        let evaluator = Evaluator::new(&toml_data);
+
+        let ast = TemplateExpr {
+            format: "hex",
+            expr: Expr::Function {
+                name: "invert",
+                args: vec![Expr::Identifier(vec!["colors", "primary"])],
+            },
+        };
+
+        assert_eq!(evaluator.evaluate(&ast).unwrap(), "00ffff");
+    }
+
+    #[test]
+    fn test_invert_brightness_is_registered() {
+        let toml_data = mock_toml();
+        let evaluator = Evaluator::new(&toml_data);
+
+        let ast = TemplateExpr {
+            format: "hex",
+            expr: Expr::Function {
+                name: "invert_brightness",
+                args: vec![Expr::Identifier(vec!["colors", "primary"])],
+            },
+        };
+
+        // #FF0000 has value 100, so inverting brightness yields black.
+        assert_eq!(evaluator.evaluate(&ast).unwrap(), "000000");
     }
 
     // --- Error Handling Tests ---
