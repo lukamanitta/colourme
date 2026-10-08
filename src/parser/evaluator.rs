@@ -162,15 +162,13 @@ impl<'a> Evaluator<'a> {
                 }
 
                 match current_value {
-                    Some(&TomlValue::String(ref s)) => Ok(Value::String(s.clone())),
-                    Some(&TomlValue::Integer(i)) => Ok(Value::Number(i as f32)),
-                    Some(&TomlValue::Float(f)) => Ok(Value::Number(f as f32)),
-                    Some(_) => {
-                        return Err(format!(
-                            "Expected a string at the end of the path, got {:?}",
-                            current_value
-                        ))
-                    }
+                    Some(TomlValue::String(s)) => Ok(Value::String(s.clone())),
+                    Some(TomlValue::Integer(i)) => Ok(Value::Number(*i as f32)),
+                    Some(TomlValue::Float(f)) => Ok(Value::Number(*f as f32)),
+                    Some(other) => Err(format!(
+                        "Expected a string at the end of the path, got {:?}",
+                        other
+                    )),
                     None => Err(format!("Path not found in TOML: {:?}", path_parts)),
                 }
             }
@@ -335,7 +333,7 @@ mod tests {
         let result = evaluator.evaluate(&ast).unwrap();
 
         // The result should be one of the three colours in the TOML.
-        let valid_results = vec!["FF0000", "222222", "000000"];
+        let valid_results = ["FF0000", "222222", "000000"];
         assert!(
             valid_results.contains(&result.as_str()),
             "Result '{}' is not one of the expected values",
