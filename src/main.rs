@@ -313,7 +313,12 @@ fn run_scheme_file(options: &RunOptions, colourscheme_path: &Path) -> Result<(),
     let colourscheme_table = load_colorscheme_from_path(colourscheme_path)?;
     let config = load_config_from_path(&options.config_path)?;
 
-    // Persistent across templates to avoid re-calculating colours.
+    // Colour definitions are cached by the exact literal template text (e.g.
+    // "{{hex:colors.primary}}") for the whole run, across every entry. This is
+    // what makes random_select repeatable: the same expression reused in
+    // several templates draws once and then reuses that value. Changing the
+    // whitespace or argument order of an expression changes its key and thus
+    // produces an independent draw (REVIEW O9).
     let mut colour_definitions: Vec<ColourDefinition> = Vec::new();
     let engine = TemplateEngine::new(&colourscheme_table);
     let template_expr_regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
