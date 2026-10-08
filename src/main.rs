@@ -2,26 +2,56 @@ mod config;
 mod engine;
 mod output;
 mod parser;
+mod paths;
 
 use engine::TemplateEngine;
 
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use regex::Regex;
 use toml::Table;
 
-use config::Config;
-
-extern crate shellexpand;
+use config::{Config, ConfigEntry};
 
 const TEMPLATE_EXPR_REGEX_STR: &str = r"\{\{(.*?)\}\}";
 
 struct ColourDefinition {
     label: String,
     colour_str: String,
+}
+
+/// Everything needed to render a scheme, with all input paths resolved.
+struct RunOptions {
+    config_path: PathBuf,
+    schemes_dir: PathBuf,
+    home: PathBuf,
+    cwd: PathBuf,
+}
+
+impl RunOptions {
+    /// Build options from the XDG defaults (no CLI overrides yet).
+    fn defaults() -> Result<Self, String> {
+        let home = paths::home_dir()?;
+        let cwd = paths::current_dir()?;
+        let xdg_env = env::var("XDG_CONFIG_HOME").ok();
+        let xdg = paths::xdg_config_home(xdg_env.as_deref(), &home);
+
+        Ok(Self {
+            config_path: paths::resolve_config_path(None, &home, &xdg),
+            schemes_dir: paths::resolve_schemes_dir(None, &home, &xdg),
+            home,
+            cwd,
+        })
+    }
+
+    fn config_dir(&self) -> &Path {
+        self.config_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+    }
 }
 
 fn resolve_post_hook(
@@ -66,29 +96,17 @@ fn resolve_post_hook(
     Ok(resolved_post_hook)
 }
 
-fn default_colourscheme_path(colourscheme_name: &str) -> String {
-    format!(
-        "{}/schemes/{}.toml",
-        shellexpand::tilde("~/.config/colourme"),
-        colourscheme_name
-    )
-}
-
-fn default_config_path() -> String {
-    shellexpand::tilde("~/.config/colourme/config.toml").to_string()
-}
-
-fn load_colorscheme_from_path(colourscheme_path: &str) -> Result<Table, String> {
+fn load_colorscheme_from_path(colourscheme_path: &Path) -> Result<Table, String> {
     let content = fs::read_to_string(colourscheme_path)
-        .map_err(|why| format!("Couldn't read file {}: {}", colourscheme_path, why))?;
+        .map_err(|why| format!("Couldn't read file {}: {}", colourscheme_path.display(), why))?;
     content
         .parse::<Table>()
-        .map_err(|e| format!("Failed to parse {}: {}", colourscheme_path, e))
+        .map_err(|e| format!("Failed to parse {}: {}", colourscheme_path.display(), e))
 }
 
-fn load_config_from_path(config_path: &str) -> Result<Config, String> {
+fn load_config_from_path(config_path: &Path) -> Result<Config, String> {
     let content = fs::read_to_string(config_path)
-        .map_err(|why| format!("Couldn't read file {}: {}", config_path, why))?;
+        .map_err(|why| format!("Couldn't read file {}: {}", config_path.display(), why))?;
     Config::new(&content)
 }
 
@@ -153,13 +171,13 @@ fn process_template_content(
 }
 
 fn render_template_file(
-    template_path: &str,
+    template_path: &Path,
     engine: &TemplateEngine,
     colour_definitions: &mut Vec<ColourDefinition>,
     regex: &Regex,
 ) -> Result<String, String> {
     let template_content = fs::read_to_string(template_path)
-        .map_err(|why| format!("Couldn't read file {}: {}", template_path, why))?;
+        .map_err(|why| format!("Couldn't read file {}: {}", template_path.display(), why))?;
     process_template_content(&template_content, engine, colour_definitions, regex)
 }
 
@@ -201,9 +219,10 @@ fn run_post_hook(
     }
 }
 
-fn run_with_paths(colourscheme_path: &str, config_path: &str) -> Result<(), String> {
+/// Render every entry in `config` using an already-loaded scheme file.
+fn run_scheme_file(options: &RunOptions, colourscheme_path: &Path) -> Result<(), String> {
     let colourscheme_table = load_colorscheme_from_path(colourscheme_path)?;
-    let config = load_config_from_path(config_path)?;
+    let config = load_config_from_path(&options.config_path)?;
 
     // Persistent across templates to avoid re-calculating colours.
     let mut colour_definitions: Vec<ColourDefinition> = Vec::new();
@@ -211,37 +230,54 @@ fn run_with_paths(colourscheme_path: &str, config_path: &str) -> Result<(), Stri
     let template_expr_regex = Regex::new(TEMPLATE_EXPR_REGEX_STR).unwrap();
 
     for entry in config.entries.iter() {
-        let resolved_content = render_template_file(
-            &entry.template_path,
+        render_entry(
+            entry,
             &engine,
             &mut colour_definitions,
             &template_expr_regex,
+            options,
         )?;
+    }
 
-        println!(
-            "[{}] Writing to {}...",
-            &entry.name, &entry.destination_path
-        );
-        output::write_atomically(Path::new(&entry.destination_path), &resolved_content)?;
+    Ok(())
+}
 
-        if let Some(post_hook) = &entry.post_hook {
-            run_post_hook(
-                &entry.name,
-                post_hook,
-                &engine,
-                &mut colour_definitions,
-                &template_expr_regex,
-            )?;
-        }
+fn render_entry(
+    entry: &ConfigEntry,
+    engine: &TemplateEngine,
+    colour_definitions: &mut Vec<ColourDefinition>,
+    regex: &Regex,
+    options: &RunOptions,
+) -> Result<(), String> {
+    let template_path =
+        paths::resolve_template(&entry.template, options.config_dir(), &options.home);
+    let destination = paths::resolve_destination(&entry.destination, None, &options.home, &options.cwd);
+
+    let resolved_content =
+        render_template_file(&template_path, engine, colour_definitions, regex)?;
+
+    println!("[{}] Writing to {}...", entry.name, destination.display());
+    output::write_atomically(&destination, &resolved_content)?;
+
+    if let Some(post_hook) = &entry.post_hook {
+        run_post_hook(
+            &entry.name,
+            post_hook,
+            engine,
+            colour_definitions,
+            regex,
+        )?;
     }
 
     Ok(())
 }
 
 fn run(colourscheme_name: &str) -> Result<(), String> {
-    let colourscheme_path = default_colourscheme_path(colourscheme_name);
-    let config_path = default_config_path();
-    run_with_paths(&colourscheme_path, &config_path)
+    let options = RunOptions::defaults()?;
+    let colourscheme_path = options
+        .schemes_dir
+        .join(format!("{}.toml", colourscheme_name));
+    run_scheme_file(&options, &colourscheme_path)
 }
 
 fn usage() {
@@ -283,7 +319,7 @@ mod tests {
         toml_str.parse::<Table>().unwrap()
     }
 
-    fn write_temp_file(contents: &str) -> std::path::PathBuf {
+    fn write_temp_file(contents: &str) -> PathBuf {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -291,6 +327,15 @@ mod tests {
             std::env::temp_dir().join(format!("colourme_test_{}_{}", std::process::id(), counter));
         std::fs::write(&path, contents).unwrap();
         path
+    }
+
+    fn test_options(config_path: &Path) -> RunOptions {
+        RunOptions {
+            config_path: config_path.to_path_buf(),
+            schemes_dir: PathBuf::new(),
+            home: paths::home_dir().unwrap(),
+            cwd: paths::current_dir().unwrap(),
+        }
     }
 
     #[test]
@@ -411,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_with_paths_renders_templates_and_writes_output() {
+    fn test_run_scheme_file_renders_templates_and_writes_output() {
         let scheme_path = write_temp_file(
             r#"
             [colors]
@@ -430,7 +475,8 @@ mod tests {
         );
         let config_path = write_temp_file(&config_content);
 
-        run_with_paths(scheme_path.to_str().unwrap(), config_path.to_str().unwrap()).unwrap();
+        let options = test_options(&config_path);
+        run_scheme_file(&options, &scheme_path).unwrap();
 
         let output = std::fs::read_to_string(&dest_path).unwrap();
         assert_eq!(output, "FF0000 and 00FF00");
@@ -439,5 +485,42 @@ mod tests {
         std::fs::remove_file(&template_path).ok();
         std::fs::remove_file(&config_path).ok();
         std::fs::remove_file(&dest_path).ok();
+    }
+
+    #[test]
+    fn test_relative_template_resolves_against_config_dir() {
+        let config_dir = std::env::temp_dir().join(format!(
+            "colourme_rel_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let templates_dir = config_dir.join("t");
+        fs::create_dir_all(&templates_dir).unwrap();
+
+        let scheme_path = config_dir.join("scheme.toml");
+        fs::write(&scheme_path, "[colors]\nprimary = '#FF0000'\n").unwrap();
+
+        fs::write(templates_dir.join("out.txt"), "{{hex:colors.primary}}").unwrap();
+
+        let dest_path = config_dir.join("dest.txt");
+        let config_path = config_dir.join("config.toml");
+        fs::write(
+            &config_path,
+            format!(
+                "[entry]\ntemplate = \"t/out.txt\"\ndestination = \"{}\"\n",
+                dest_path.display()
+            ),
+        )
+        .unwrap();
+
+        let options = test_options(&config_path);
+        run_scheme_file(&options, &scheme_path).unwrap();
+
+        assert_eq!(fs::read_to_string(&dest_path).unwrap(), "FF0000");
+
+        fs::remove_dir_all(&config_dir).ok();
     }
 }

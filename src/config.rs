@@ -1,12 +1,10 @@
 use toml::Table;
 
-extern crate shellexpand;
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigEntry {
     pub name: String,
-    pub template_path: String,
-    pub destination_path: String,
+    pub template: String,
+    pub destination: String,
     pub post_hook: Option<String>,
 }
 
@@ -54,8 +52,8 @@ impl Config {
 
             entries.push(ConfigEntry {
                 name: key.to_string(),
-                template_path: shellexpand::tilde(template).to_string(),
-                destination_path: shellexpand::tilde(destination).to_string(),
+                template: template.to_string(),
+                destination: destination.to_string(),
                 post_hook,
             });
         }
@@ -86,8 +84,8 @@ mod tests {
 
         assert_eq!(config.entries.len(), 2);
         let hypr = config.entries.iter().find(|e| e.name == "hypr").unwrap();
-        assert_eq!(hypr.template_path, "/t/hypr.lua");
-        assert_eq!(hypr.destination_path, "/d/hypr.lua");
+        assert_eq!(hypr.template, "/t/hypr.lua");
+        assert_eq!(hypr.destination, "/d/hypr.lua");
         assert_eq!(hypr.post_hook.as_deref(), Some("hyprctl reload"));
         let ghostty = config.entries.iter().find(|e| e.name == "ghostty").unwrap();
         assert_eq!(ghostty.post_hook, None);
