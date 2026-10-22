@@ -108,7 +108,7 @@
         }
       );
 
-      formatter = eachSystem (pkgs: pkgs.nixfmt-rfc-style);
+      formatter = eachSystem (pkgs: pkgs.nixfmt);
 
       checks = eachSystem (
         pkgs:

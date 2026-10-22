@@ -76,7 +76,7 @@ destination = "~/.config/ghostty/themes/Luka"
   otherwise the current working directory.
 - A leading `~` expands to `$HOME`; absolute paths are used as-is.
   Shell-style `$VAR` expansion is intentionally *not* performed (see
-  `DECISIONS.md`).
+  `docs/DECISIONS.md`).
 
 ### `--dest-root`
 
@@ -109,7 +109,7 @@ accent     = {{hex:darken(colors.primary, 2.0)}}
 ```
 
 If a `{{ ... }}` block with no fallback references a key the scheme lacks,
-`colourme` prints a warning before rendering (see `DECISIONS.md`).
+`colourme` prints a warning before rendering (see `docs/DECISIONS.md`).
 
 ## Writes
 
@@ -126,6 +126,5 @@ cargo test
 cargo run -- --dry-run Gruvbox
 ```
 
-See `DECISIONS.md` for judgement calls made while implementing the
-interface changes described in `INTERFACE_CHANGES.md` and the findings in
-`REVIEW.md`.
+See `docs/DECISIONS.md` for judgement calls made while implementing the
+interface changes.

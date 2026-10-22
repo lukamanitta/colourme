@@ -1,12 +1,12 @@
 # Decisions log
 
-Judgement calls made while implementing `INTERFACE_CHANGES.md` and the
-findings in `REVIEW.md`, recorded for review. Each links the change to the
+Judgement calls made while implementing the planned interface changes and
+the review findings, recorded for review. Each links the change to the
 commit series.
 
 ## D1 — Use `clap` (derive) for the CLI
 
-`INTERFACE_CHANGES.md` §6 allows clap if adding a dependency is
+The interface plan allows clap if adding a dependency is
 acceptable. It gives correct `--help`/`--version`/unknown-flag handling and
 exit-2 usage errors for free, and flag/env precedence via the `env`
 attribute. Implemented with `features = ["derive", "env"]`.
@@ -22,7 +22,7 @@ file" window at negligible cost.
 
 ## D3 — `$VAR` expansion intentionally omitted (addresses O5 only in part)
 
-REVIEW O5 notes that `shellexpand::tilde` never expanded `${VAR}`/`$VAR`.
+Review finding O5 noted that `shellexpand::tilde` never expanded `${VAR}`/`$VAR`.
 We fixed the more important half (XDG-aware, overridable paths) and
 deliberately did **not** add environment expansion: the Nix goal is a
 *portable* config, and ambient-env expansion would make rendering depend
